@@ -1,0 +1,43 @@
+node_modules/
+dist/
+*.tsbuildinfo
+artifacts/
+coverage/
+__pycache__/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.secret
+*.secrets
+
+# Local MCP client configs (contain the BrowserForge bearer token)
+.codex/
+.claude/settings.local.json
+.mcp.json
+
+# BrowserForge local state, tokens and exports
+.config/browserforge/
+browserforge-token*
+*.token
+
+# Network captures and analysis output (may contain cookies, tokens, personal data)
+*.har
+*.har.json
+captures/
+exports/
+recordings/
+*-capture.*
+*-openapi.json
+
+# Private signing keys (the public manifests/chrome-key.txt is intentionally tracked)
+*.private-key.*
+private-key*
+
+# Logs and OS/editor noise
+*.log
+.DS_Store

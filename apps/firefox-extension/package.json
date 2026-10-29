@@ -1,0 +1,14 @@
+{
+  "name": "@browserforge/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "package": "node build.mjs --package"
+  },
+  "dependencies": {
+    "@browserforge/browser-protocol": "*",
+    "@browserforge/shared": "*"
+  }
+}

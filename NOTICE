@@ -1,0 +1,12 @@
+BrowserForge MCP — third-party notices
+
+No source code from other projects is included in this repository.
+
+Referenced for architecture ideas only (see docs/RESEARCH.md):
+  - Blueprint MCP (Apache-2.0) https://github.com/railsblueprint/blueprint-mcp
+  - Reverse API Engineer (MIT)  https://github.com/nottelabs/reverse-api-engineer
+
+Runtime dependencies (see package-lock.json for exact versions and licences):
+  @modelcontextprotocol/sdk (MIT), ws (MIT), zod (MIT)
+Development dependencies include TypeScript (Apache-2.0), esbuild (MIT), vitest (MIT),
+eslint (MIT), web-ext (MPL-2.0), Playwright (Apache-2.0), selenium-webdriver (Apache-2.0).

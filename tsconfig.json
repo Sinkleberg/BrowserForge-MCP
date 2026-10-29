@@ -1,0 +1,26 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "packages/shared"
+    },
+    {
+      "path": "packages/browser-protocol"
+    },
+    {
+      "path": "packages/network-inspector"
+    },
+    {
+      "path": "packages/api-analyzer"
+    },
+    {
+      "path": "packages/client-generator"
+    },
+    {
+      "path": "packages/knowledge"
+    },
+    {
+      "path": "apps/mcp-server"
+    }
+  ]
+}

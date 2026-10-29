@@ -1,0 +1,5 @@
+# Add to ~/.codex/config.toml
+# export BROWSERFORGE_MCP_TOKEN="$(cat ~/.config/browserforge/mcp-token)"
+[mcp_servers.browserforge]
+url = "http://127.0.0.1:7345/mcp"
+bearer_token_env_var = "BROWSERFORGE_MCP_TOKEN"

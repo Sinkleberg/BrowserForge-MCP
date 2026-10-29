@@ -1,0 +1,39 @@
+:root { color-scheme: light dark; --bg:#ffffff; --fg:#1f2328; --muted:#59636e; --line:#d1d9e0; --accent:#0969da; --danger:#cf222e; --ok:#1a7f37; --warn:#9a6700; --card:#f6f8fa; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --line:#30363d; --accent:#4493f8; --danger:#f85149; --ok:#3fb950; --warn:#d29922; --card:#161b22; } }
+* { box-sizing: border-box; }
+body { margin: 0; width: 360px; padding: 12px; font: 13px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+h1 { font-size: 15px; margin: 0; flex: 1; }
+h2 { font-size: 13px; margin: 0 0 6px; color: var(--warn); }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); display: inline-block; }
+.dot.on { background: var(--ok); } .dot.wait { background: var(--warn); }
+.status { color: var(--muted); font-size: 12px; }
+.controls { display: flex; gap: 8px; margin-bottom: 8px; }
+button { font: inherit; padding: 6px 10px; border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 6px; cursor: pointer; }
+button:hover { border-color: var(--accent); } button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 700; flex: 1; }
+.controls #pause { flex: 1; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.link { border: 0; background: none; color: var(--accent); padding: 2px 0; }
+details { border-top: 1px solid var(--line); padding: 8px 0; }
+summary { cursor: pointer; font-weight: 600; } summary small { font-weight: 400; color: var(--muted); }
+label { display: block; margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+label input[type=text], label input[type=password] { display: block; width: 100%; margin-top: 3px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+label.check { display: flex; gap: 6px; align-items: center; color: var(--fg); }
+.row { display: flex; gap: 8px; margin-top: 8px; }
+.hint { color: var(--muted); font-size: 11.5px; margin: 6px 0 0; } .error { color: var(--danger); margin: 6px 0 0; min-height: 1em; }
+.notice { background: var(--card); border: 1px solid var(--warn); border-radius: 6px; padding: 6px 8px; margin: 0 0 8px; }
+ul { list-style: none; margin: 6px 0 0; padding: 0; }
+#approvals { background: var(--card); border: 2px solid var(--warn); border-radius: 8px; padding: 8px; margin-bottom: 8px; }
+#approvals li { padding: 6px 0; border-top: 1px solid var(--line); } #approvals li:first-child { border-top: 0; }
+#approvals .host { color: var(--muted); font-size: 11.5px; } #approvals .detail { margin: 2px 0 6px; word-break: break-word; }
+.tabs li { display: flex; gap: 6px; align-items: center; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+.tabs li:hover, .tabs li:focus-visible { background: var(--card); }
+.tabs li.selected { outline: 1px solid var(--accent); }
+.tabs .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .tabs .u { color: var(--muted); font-size: 11px; }
+.activity { max-height: 150px; overflow: auto; font-size: 12px; }
+.activity li { padding: 2px 0; border-bottom: 1px dotted var(--line); } .activity .ok { color: var(--ok); } .activity .error, .activity .denied { color: var(--danger); } .activity .pending { color: var(--warn); }
+code { font-family: ui-monospace, monospace; background: var(--card); padding: 0 3px; border-radius: 3px; }
+.yolo-banner { background: var(--danger); color: #fff; border-radius: 6px; padding: 6px 8px; margin: 0 0 8px; } .yolo-banner button { margin-left: 6px; padding: 2px 8px; color: var(--fg); }
+.yolo-opt { color: var(--danger); font-weight: 600; }
+.activity .approved { color: var(--ok); } .activity .yolo { color: var(--danger); } .activity .timeout, .activity .cancelled { color: var(--muted); }

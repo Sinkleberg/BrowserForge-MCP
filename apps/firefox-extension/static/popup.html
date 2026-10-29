@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BrowserForge</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <span id="dot" class="dot" role="img" aria-label="disconnected"></span>
+    <h1>BrowserForge</h1>
+    <span id="status" class="status" aria-live="polite">Disconnected</span>
+  </header>
+
+  <section class="controls" aria-label="Automation controls">
+    <button id="stop" class="danger" type="button" title="Cancel everything in flight and block the agent until you resume">■ STOP</button>
+    <button id="pause" type="button">❚❚ Pause</button>
+  </section>
+  <p id="yoloBanner" class="yolo-banner" role="alert" hidden><b>YOLO mode is ON</b> — every approval auto-passes for all agents using this browser. <button id="yoloOff" type="button">Turn off</button></p>
+  <p id="locked" class="notice" hidden>Stopped by you — the agent cannot resume. Press Resume to allow it again.</p>
+
+  <section id="approvals" aria-label="Pending approvals" hidden>
+    <h2>Needs your approval</h2>
+    <ul id="approvalList"></ul>
+  </section>
+
+  <details>
+    <summary>Approvals</summary>
+    <label class="check"><input id="soundOn" type="checkbox" /> Play a sound when an approval is waiting</label>
+    <label class="check yolo-opt"><input id="yoloOn" type="checkbox" /> YOLO: auto-approve everything (no prompts)</label>
+    <p class="hint">YOLO applies to every agent connected to this browser, including passwords, submits and sends, and stays on until you switch it off. STOP still halts everything. Every decision is saved in History.</p>
+  </details>
+
+  <details id="connection" open>
+    <summary>Connection</summary>
+    <label>Server <input id="serverUrl" type="text" spellcheck="false" autocomplete="off" /></label>
+    <label>Token <input id="token" type="password" placeholder="paste extension token" spellcheck="false" autocomplete="off" /></label>
+    <p class="hint">Get the token with <code>browserforge tokens</code>. It is stored only in this browser profile.</p>
+    <div class="row">
+      <button id="connect" type="button">Connect</button>
+      <button id="disconnect" type="button">Disconnect</button>
+    </div>
+    <p id="error" class="error" role="alert"></p>
+  </details>
+
+  <details open>
+    <summary>Tabs <small>(click to target)</small></summary>
+    <ul id="tabs" class="tabs"></ul>
+  </details>
+
+  <details>
+    <summary>Network capture</summary>
+    <label class="check"><input id="capEnabled" type="checkbox" /> Capture request metadata (URLs, headers, timing)</label>
+    <label class="check"><input id="capBodies" type="checkbox" /> Capture response bodies <small id="bodiesNote"></small></label>
+    <div class="row">
+      <button id="grantBodies" type="button">Grant body permission…</button>
+      <button id="grantDownloads" type="button">Allow download list…</button>
+    </div>
+    <p class="hint">Secrets are redacted by the server. Nothing leaves your machine.</p>
+  </details>
+
+  <details>
+    <summary>Approval history</summary>
+    <ul id="history" class="activity"></ul>
+    <div class="row"><button id="exportHistory" type="button">Export JSON</button><button id="clearHistory" type="button" class="link">Clear</button></div>
+  </details>
+
+  <details open>
+    <summary>Activity</summary>
+    <ul id="activity" class="activity"></ul>
+    <button id="clearActivity" type="button" class="link">Clear</button>
+  </details>
+  <script src="popup.js"></script>
+</body>
+</html>

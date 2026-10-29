@@ -1,0 +1,42 @@
+{
+  "name": "browserforge-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Independent Firefox/Chrome browser automation and API reverse-engineering platform exposed over MCP",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "tsc -b && npm run build -w @browserforge/extension",
+    "typecheck": "tsc -b && tsc -p apps/firefox-extension && tsc -p tests",
+    "lint": "eslint . && web-ext lint -s apps/firefox-extension/dist/firefox --warnings-as-errors=false",
+    "test": "vitest run --project unit --project security --project integration",
+    "test:e2e": "vitest run --project e2e",
+    "test:all": "vitest run",
+    "package": "npm run build && npm run package -w @browserforge/extension",
+    "dev": "node scripts/dev.mjs",
+    "serve": "node apps/mcp-server/dist/cli.js serve"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/chrome": "0.3.6",
+    "@types/firefox-webext-browser": "143.0.1",
+    "@types/node": "24.19.2",
+    "@types/selenium-webdriver": "4.1.28",
+    "@types/ws": "8.18.2",
+    "esbuild": "0.28.2",
+    "eslint": "10.13.0",
+    "playwright": "1.64.1",
+    "selenium-webdriver": "4.51.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.0",
+    "vitest": "5.0.5",
+    "web-ext": "10.8.0"
+  }
+}
