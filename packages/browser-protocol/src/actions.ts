@@ -73,6 +73,7 @@ export const ACTIONS = {
     description: 'Compact DOM snapshot (untrusted content)',
     args: z.object({ tabId: TabId, maxNodes: z.number().int().positive().max(5_000).optional(), root: z.string().max(500).optional() }),
   },
+  captcha_scan: { readOnly: true, description: 'Find CAPTCHA widgets (type and site key) on the page (untrusted content)', args: z.object({ tabId: TabId }) },
   interactive_elements: { readOnly: true, description: 'Interactive elements with refs', args: z.object({ tabId: TabId, limit: z.number().int().positive().max(1000).optional(), visibleOnly: z.boolean().optional(), inViewport: z.boolean().optional(), format: z.enum(['full', 'table']).optional(), includeFrames: z.boolean().optional() }) },
   screenshot: {
     readOnly: true,

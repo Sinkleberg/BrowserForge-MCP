@@ -11,6 +11,7 @@ import type { DocStore, SiteStore, TraceStore } from '@browserforge/knowledge';
 import type { FlowRecorder } from './flows/recorder.js';
 import type { PluginStore } from './plugins/store.js';
 import type { PluginRegistry } from './plugins/types.js';
+import type { CaptchaConfig, CaptchaSolver } from './tools/captcha.js';
 
 export const SERVER_VERSION = '0.1.0';
 export const DEFAULT_PORT = 7345;
@@ -45,6 +46,8 @@ export interface ServerConfig {
   flows: { record: boolean };
   /** A private, rotating log file with everything the server logs (never page content, typed values or secrets). */
   logging: { file: boolean; retentionDays: number };
+  /** CapSkip CAPTCHA solving (off by default). It talks only to a CapSkip app on this machine, and browser_solve_captcha additionally needs YOLO mode on in the extension. */
+  captcha: CaptchaConfig;
 }
 
 /** The decider receives page content, so only a loopback endpoint is accepted. */
@@ -81,6 +84,8 @@ export interface ServerContext {
   analyses: AnalysisStore<import('@browserforge/api-analyzer').AnalysisReport>;
   workflows: WorkflowEngine;
   profiles: ProfileStore;
+  /** Optional CapSkip solver (only present when captcha.enabled). */
+  captchaSolver?: CaptchaSolver;
   logger: Logger;
   /** Where the log is written, if file logging is on. */
   logFile?: LogFile;
@@ -123,6 +128,13 @@ export function buildConfig(overrides: Partial<ServerConfig> & { extraAllowDirs?
     knowledge: { traces: overrides.knowledge?.traces ?? process.env.BROWSERFORGE_NO_TRACES !== '1', retentionDays: overrides.knowledge?.retentionDays ?? 90 },
     flows: { record: overrides.flows?.record ?? process.env.BROWSERFORGE_NO_FLOWS !== '1' },
     logging: { file: overrides.logging?.file ?? process.env.BROWSERFORGE_NO_LOG_FILE !== '1', retentionDays: overrides.logging?.retentionDays ?? 14 },
+    captcha: {
+      enabled: overrides.captcha?.enabled ?? process.env.CAPSKIP_ENABLED === '1',
+      url: overrides.captcha?.url || `http://${process.env.CAPSKIP_HOST || '127.0.0.1'}:${process.env.CAPSKIP_PORT || '8080'}`,
+      apiKey: overrides.captcha?.apiKey ?? process.env.CAPSKIP_API_KEY,
+      timeoutSeconds: overrides.captcha?.timeoutSeconds ?? Number(process.env.CAPSKIP_TIMEOUT ?? 300),
+      pollIntervalSeconds: overrides.captcha?.pollIntervalSeconds ?? Number(process.env.CAPSKIP_POLLING_INTERVAL ?? 5),
+    },
   };
 }
 

@@ -34,7 +34,7 @@ Binary bodies are never stored. Capture stops at 5 000 requests per capture (con
 - Full-page screenshots are stitched viewport captures (rate-limited to ~2/s by browsers) and capped at 12 000 CSS px; sticky headers may repeat.
 - Consequential-action detection is heuristic (labels/types). It judges the whole enclosing control: its text, `aria-label`, `title`, `aria-labelledby` and labelled children such as `<svg aria-label="Send">`. A cleverly disguised button (an icon with no label anywhere, "Show more") may still not trigger an approval prompt.
 - YOLO mode disables the approval gate entirely for that browser (see `docs/SECURITY.md`).
-- CAPTCHAs, 2FA and logins are for the human; the tool deliberately offers no way to bypass them.
+- 2FA and logins are for the human; the tool offers no way to bypass them. CAPTCHAs are for the human too, unless you opt in to `browser_solve_captcha` (reCAPTCHA v2/v3 and Turnstile only, through a local CapSkip app, with YOLO mode on): hCaptcha, image CAPTCHAs and widgets inside unusual iframes are still yours to solve.
 - The Chrome service worker can be suspended; BrowserForge reconnects automatically, but in-flight long actions may need a retry.
 
 ## Local decider, memory and fine-tuning data

@@ -13,6 +13,7 @@
 - Navigation results carry a `siteCard` when BrowserForge knows something about the site (account needed, CAPTCHA seen, tricky dropdowns, flows to replay): read it before starting, and call `site_note` when something blocks you. After a submit use `browser_verify` instead of a screenshot; `browser_run_goal` also checks its own ending and labels the run, and your `browser_goal_feedback` overrides that label.
 - If a screenshot is truly needed, use `format: "jpeg"` with `quality: 50`.
 - Approvals (submit, send, pay, password) are for me to answer in the extension. Never try to work around them.
+- **CAPTCHAs**: solve them yourself when YOLO mode is on or I ask. Try `browser_solve_captcha` first (needs a local CapSkip app); otherwise click the checkbox inside the CAPTCHA iframe, take one `jpeg` screenshot (`quality: 50`) if an image challenge appears, click the matching tiles, press Verify and re-read the page. Give up after 3 rounds and tell me.
 
 ## Job applications
 

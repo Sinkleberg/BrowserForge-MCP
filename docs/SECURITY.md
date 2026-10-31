@@ -73,7 +73,25 @@ BrowserForge never evaluates JavaScript supplied by an agent or a page. Interact
 
 ## Compliance
 
-Use network capture and API analysis only on sites you are authorised to inspect. The tool does not solve CAPTCHAs, rotate identities, spoof browsers or evade rate limits, and the agent instructions tell it not to. Respect site terms and the law.
+Use network capture and API analysis only on sites you are authorised to inspect. BrowserForge does not rotate identities, spoof browsers or evade rate limits. Optional CAPTCHA solving with a local CapSkip app is available (see below) but is off by default and gated behind YOLO mode — use it only on sites you are authorised to automate. Respect site terms and the law.
+
+## CAPTCHA solving (optional, off by default)
+
+`browser_solve_captcha` hands reCAPTCHA v2/v3 (including invisible and Enterprise) and Cloudflare Turnstile to [CapSkip](https://github.com/capskip/capskip-mcp), a desktop solver that runs on your own computer. hCaptcha is not supported. It needs both of these, and refuses with `PERMISSION_DENIED` otherwise:
+
+- **Server switch**: start the daemon with `--capskip` (or `CAPSKIP_ENABLED=1`). Options: `--capskip-url` (default `http://127.0.0.1:8080`, or `CAPSKIP_HOST` / `CAPSKIP_PORT`), `--capskip-api-key` / `CAPSKIP_API_KEY` (any string when CapSkip's key check is off), `--capskip-timeout` / `CAPSKIP_TIMEOUT` seconds (default 300).
+- **YOLO mode** on in the extension popup. Only the human can set it; the agent, the server and web pages cannot.
+
+What it does and does not do:
+
+- **Loopback only.** The CapSkip URL must be `127.0.0.1`, `localhost` or `::1`, or the server refuses to start: the page address and the public site key are sent to it, like the local decider. Nothing goes to a third-party solving service.
+- The extension's read-only `captcha_scan` action lists the widgets on the top page (type and public site key). It does not click anything. CAPTCHAs inside iframes other than the standard reCAPTCHA frame, image CAPTCHAs, GeeTest, CaptchaFox, Friendly Captcha, ALTCHA and Capy are not detected.
+- The tool returns the token and the field it belongs in; the agent places it with `browser_fill_field`. Nothing is injected for it, and the form submit still goes through the approval gate (which YOLO passes). For Turnstile the token is bound to the User-Agent CapSkip returns.
+- The API key is never written to logs or traces. Solves are logged by type and duration only.
+
+**Solving by looking (no CapSkip).** The agent instructions also let the agent solve a CAPTCHA itself when YOLO mode is on or you tell it to: it clicks the checkbox inside the CAPTCHA iframe, takes one screenshot of the image challenge, clicks the matching tiles and presses Verify, giving up after 3 rounds. This uses only the ordinary click and screenshot tools (the screenshot goes to your AI client, as any screenshot does), so there is no server-side gate beyond the instructions; the YOLO condition is guidance, not enforcement.
+
+Solving a CAPTCHA defeats a check the site put there to stop automation. Use it only on sites you are authorised to automate, on a dedicated browser profile, and treat it like YOLO itself.
 
 ## Reporting
 

@@ -294,6 +294,24 @@ function pointerClick(el: Element): void {
   (el as HTMLElement).click();
 }
 
+/** CAPTCHA widgets (reCAPTCHA, Turnstile) judge the mouse sequence: hover, move, down, up, then a click that carries coordinates. A bare click() leaves them spinning. */
+const CAPTCHA_FRAME = /\/recaptcha\/|challenges\.cloudflare\.com|hcaptcha\.com/;
+function humanClick(el: Element): void {
+  const r = (el as HTMLElement).getBoundingClientRect();
+  const x = r.left + r.width * (0.35 + Math.random() * 0.3);
+  const y = r.top + r.height * (0.35 + Math.random() * 0.3);
+  const pt = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y, screenX: x + (window.screenX || 0), screenY: y + (window.screenY || 0) };
+  const pointer = { ...pt, pointerId: 1, pointerType: 'mouse', isPrimary: true };
+  for (const t of ['pointerover', 'pointerenter', 'pointermove']) el.dispatchEvent(new PointerEvent(t, pointer));
+  for (const t of ['mouseover', 'mouseenter', 'mousemove']) el.dispatchEvent(new MouseEvent(t, pt));
+  (el as HTMLElement).focus?.({ preventScroll: true });
+  el.dispatchEvent(new PointerEvent('pointerdown', { ...pointer, button: 0, buttons: 1 }));
+  el.dispatchEvent(new MouseEvent('mousedown', { ...pt, button: 0, buttons: 1, detail: 1 }));
+  el.dispatchEvent(new PointerEvent('pointerup', { ...pointer, button: 0, buttons: 0 }));
+  el.dispatchEvent(new MouseEvent('mouseup', { ...pt, button: 0, buttons: 0, detail: 1 }));
+  el.dispatchEvent(new MouseEvent('click', { ...pt, button: 0, detail: 1 }));
+}
+
 const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
 const editorText = (el: HTMLElement) => el.innerText ?? el.textContent ?? '';
 
@@ -642,6 +660,37 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
     return { url: location.href, title: document.title, ...snapshot(root, Math.min(Number(args.maxNodes ?? 2000), 5000)) };
   },
 
+  // Read-only: reports which CAPTCHA widgets the page carries and their public site keys. Nothing is clicked or solved here.
+  captcha_scan: () => {
+    const widgets: Json[] = [];
+    const add = (w: Json) => { if (!widgets.some((x) => x.kind === w.kind && x.siteKey === w.siteKey)) widgets.push(w); };
+    const key = (el: Element) => el.getAttribute('data-sitekey') || '';
+    for (const el of document.querySelectorAll('.g-recaptcha[data-sitekey]')) {
+      add({ kind: 'recaptcha_v2', siteKey: key(el), invisible: el.getAttribute('data-size') === 'invisible' || undefined });
+    }
+    for (const el of document.querySelectorAll('.cf-turnstile[data-sitekey]')) add({ kind: 'turnstile', siteKey: key(el), action: el.getAttribute('data-action') || undefined });
+    for (const el of document.querySelectorAll('.h-captcha[data-sitekey]')) add({ kind: 'hcaptcha', siteKey: key(el) });
+    for (const f of document.querySelectorAll('iframe[src]')) {
+      let u: URL;
+      try { u = new URL(f.getAttribute('src') || '', location.href); } catch { continue; }
+      if (/(^|\.)(google\.com|recaptcha\.net)$/.test(u.hostname) && u.pathname.includes('/recaptcha/') && u.searchParams.get('k')) {
+        if (!widgets.some((x) => x.siteKey === u.searchParams.get('k'))) add({ kind: 'recaptcha_v2', siteKey: u.searchParams.get('k') as string, enterprise: u.pathname.includes('/enterprise/') || undefined });
+      }
+    }
+    // reCAPTCHA v3 / Enterprise load as <script src=".../api.js?render=SITEKEY"> and are driven by grecaptcha.execute(SITEKEY, {action}).
+    for (const s of document.querySelectorAll('script[src]')) {
+      let u: URL;
+      try { u = new URL(s.getAttribute('src') || '', location.href); } catch { continue; }
+      const render = u.searchParams.get('render');
+      if (/(^|\.)(google\.com|recaptcha\.net)$/.test(u.hostname) && u.pathname.includes('/recaptcha/') && render && render !== 'explicit') {
+        const inline = [...document.querySelectorAll('script:not([src])')].map((x) => x.textContent ?? '').join('\n');
+        const action = new RegExp(`grecaptcha(?:\\.enterprise)?\\.execute\\(\\s*['"]${render.replace(/[^\w-]/g, '')}['"]\\s*,\\s*\\{[^}]*action\\s*:\\s*['"]([^'"]+)['"]`).exec(inline)?.[1];
+        add({ kind: 'recaptcha_v3', siteKey: render, action, enterprise: u.pathname.includes('/enterprise') || undefined });
+      }
+    }
+    return { url: location.href, epoch: EPOCH, widgets: widgets.filter((w) => w.siteKey) };
+  },
+
   interactive_elements: (args) => {
     const table = args.format === 'table';
     const limit = Math.min(Number(args.limit ?? (table ? 100 : 300)), 1000);
@@ -678,7 +727,9 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
     const box = (el as HTMLElement).getBoundingClientRect();
     if (box.bottom < 0 || box.top > innerHeight || box.right < 0 || box.left > innerWidth) (el as HTMLElement).scrollIntoView({ block: 'nearest', inline: 'nearest' });
     if (el instanceof HTMLElement && (isEditable(el) || el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) (editableHost(el) ?? el).focus();
-    if (['option', 'combobox', 'menuitem'].includes(el.getAttribute('role') ?? '')) pointerClick(el);
+    const role = el.getAttribute('role') ?? '';
+    if (['option', 'combobox', 'menuitem'].includes(role)) pointerClick(el);
+    else if (role === 'checkbox' || CAPTCHA_FRAME.test(location.href)) humanClick(el);
     else (el as HTMLElement).click();
     capture(el, { consequential: Boolean(risk) });
     return { clicked: true, element: describe(el) };

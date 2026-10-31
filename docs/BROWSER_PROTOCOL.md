@@ -43,7 +43,7 @@ Arguments are validated by the server **and again** by the extension. Unknown ar
 | `tabs_select` | | makes the tab the default target |
 | `navigate` | | http(s) only; `history: back/forward/reload`; `newTab` |
 | `click`, `type`, `fill_field`, `select_option`, `scroll`, `press_key` | | target by `ref` (preferred) or `selector` |
-| `page_text`, `dom_snapshot`, `interactive_elements`, `forms`, `console_errors`, `wait_for_element` | ✔ | content is untrusted |
+| `page_text`, `dom_snapshot`, `captcha_scan`, `interactive_elements`, `forms`, `console_errors`, `wait_for_element` | ✔ | content is untrusted |
 | `fill_form` | | label/name/id matching; `files[]`, `submit` need approval |
 | `screenshot` | ✔ | PNG/JPEG, optional full page |
 | `downloads` | ✔ | needs optional `downloads` permission |

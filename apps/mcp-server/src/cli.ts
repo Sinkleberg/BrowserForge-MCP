@@ -34,7 +34,9 @@ Usage:
 Local decider (browser_run_goal): [--decider qwen|cascade|laya] [--decider-url http://127.0.0.1:11434] [--decider-model qwen3:4b-instruct]
                                    [--laya-url http://127.0.0.1:11435] [--laya-model laya] [--no-traces] [--no-flows] [--no-log-file] [--log-retention-days N] [--trace-retention-days N]
 
-Environment: BROWSERFORGE_DECIDER=cascade|qwen|laya, BROWSERFORGE_LAYA_URL, BROWSERFORGE_LAYA_MODEL, BROWSERFORGE_DECIDER_URL, BROWSERFORGE_DECIDER_MODEL, BROWSERFORGE_NO_TRACES=1, BROWSERFORGE_PORT, BROWSERFORGE_HOME, BROWSERFORGE_ALLOW_REVEAL=1, BROWSERFORGE_ALLOW_DIRS, BROWSERFORGE_LOG=debug|info|warn|error`;
+CAPTCHA solving via a local CapSkip app (browser_solve_captcha also needs YOLO mode in the extension): [--capskip] [--capskip-url http://127.0.0.1:8080] [--capskip-api-key KEY] [--capskip-timeout SECONDS]
+
+Environment: BROWSERFORGE_DECIDER=cascade|qwen|laya, BROWSERFORGE_LAYA_URL, BROWSERFORGE_LAYA_MODEL, BROWSERFORGE_DECIDER_URL, BROWSERFORGE_DECIDER_MODEL, BROWSERFORGE_NO_TRACES=1, BROWSERFORGE_PORT, BROWSERFORGE_HOME, BROWSERFORGE_ALLOW_REVEAL=1, BROWSERFORGE_ALLOW_DIRS, BROWSERFORGE_LOG=debug|info|warn|error, CAPSKIP_ENABLED=1, CAPSKIP_HOST, CAPSKIP_PORT, CAPSKIP_API_KEY, CAPSKIP_TIMEOUT`;
 
 /** "30m", "2h", "1d" -> that many milliseconds. */
 function parseSince(v: string | undefined): number | undefined {
@@ -78,6 +80,10 @@ async function main(): Promise<void> {
       name: { type: 'string' },
       description: { type: 'string' },
       'trace-retention-days': { type: 'string' },
+      capskip: { type: 'boolean' },
+      'capskip-url': { type: 'string' },
+      'capskip-api-key': { type: 'string' },
+      'capskip-timeout': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -100,6 +106,15 @@ async function main(): Promise<void> {
     ...(values['no-flows'] ? { flows: { record: false } } : {}),
     ...(values['no-log-file'] || values['log-retention-days'] ? { logging: { file: !values['no-log-file'], retentionDays: Number(values['log-retention-days'] ?? 14) } } : {}),
     ...(values['no-traces'] || retention ? { knowledge: { traces: !values['no-traces'], retentionDays: retention ?? 90 } } : {}),
+    ...(values.capskip || values['capskip-url'] || values['capskip-api-key'] || values['capskip-timeout'] ? {
+      captcha: {
+        enabled: true,
+        url: values['capskip-url'] ?? '',
+        apiKey: values['capskip-api-key'],
+        timeoutSeconds: values['capskip-timeout'] ? Number(values['capskip-timeout']) : 300,
+        pollIntervalSeconds: 5,
+      },
+    } : {}),
   };
 
   switch (cmd) {

@@ -612,7 +612,7 @@ async function runAction(action: string, rawArgs: Record<string, unknown>, signa
     default: {
       // Operations executed inside the page by the content script.
       const tab = await targetTab(args.tabId);
-      const opMap: Partial<Record<ActionName, string>> = { page_text: 'page_text', dom_snapshot: 'dom_snapshot', interactive_elements: 'interactive_elements', forms: 'forms', tables: 'tables', resolve_locator: 'resolve_locator', click: 'click', type: 'type', fill_field: 'fill_field', select_option: 'select_option', scroll: 'scroll', press_key: 'press_key', wait_for_element: 'wait_for_element', fill_form: 'fill_form', console_errors: 'console_errors' };
+      const opMap: Partial<Record<ActionName, string>> = { page_text: 'page_text', dom_snapshot: 'dom_snapshot', captcha_scan: 'captcha_scan', interactive_elements: 'interactive_elements', forms: 'forms', tables: 'tables', resolve_locator: 'resolve_locator', click: 'click', type: 'type', fill_field: 'fill_field', select_option: 'select_option', scroll: 'scroll', press_key: 'press_key', wait_for_element: 'wait_for_element', fill_form: 'fill_form', console_errors: 'console_errors' };
       const op = opMap[action];
       if (!op) throw new ActionError('UNSUPPORTED', `Action ${action} is not implemented`);
       const { tabId: _t, ...rest } = args;

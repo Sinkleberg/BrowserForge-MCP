@@ -19,6 +19,7 @@ import { NetworkStore } from '@browserforge/network-inspector';
 import { BrowserForgeError, safeEqual, type Logger } from '@browserforge/shared';
 import { AnalysisStore } from './analysis-store.js';
 import { SERVER_VERSION, buildConfig, createLoggerFor, type ServerConfig, type ServerContext } from './context.js';
+import { createCaptchaSolver } from './tools/captcha.js';
 import { BrowserHub, isLoopbackHost } from './hub.js';
 import { createMcpServer } from './mcp.js';
 import { ProfileStore } from './profiles.js';
@@ -63,8 +64,12 @@ export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: 
     analyses: new AnalysisStore<AnalysisReport>(),
     profiles: new ProfileStore(path.join(config.configDir, 'profiles.json')),
     workflows: undefined as never,
+    captchaSolver: createCaptchaSolver(config.captcha, logger),
     transports: { http: false, stdio: false, mcpSessions: () => sessions.size },
   };
+  if (ctx.captchaSolver) {
+    logger.info('capskip captcha solver enabled', { url: config.captcha.url });
+  }
   ctx.workflows = new WorkflowEngine({
     logger,
     validateStep: (spec) => validateWorkflowStep(ctx, spec),

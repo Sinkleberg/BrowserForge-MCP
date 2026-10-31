@@ -69,7 +69,7 @@ More end-to-end examples: [docs/WORKFLOWS.md](docs/WORKFLOWS.md).
 
 | Namespace | Tools |
 |---|---|
-| **browser** | `browser_get_tabs`, `browser_get_active_tab`, `browser_select_tab`, `browser_close_tab`, `browser_navigate`, `browser_click`, `browser_type`, `browser_fill_field`, `browser_select_option`, `browser_scroll`, `browser_press_key`, `browser_get_page_text`, `browser_get_dom_snapshot`, `browser_get_interactive_elements`, `browser_take_screenshot`, `browser_wait_for_element`, `browser_get_forms`, `browser_extract_table`, `browser_verify`, `browser_fill_form`, `browser_get_downloads`, `browser_get_console_errors`, `browser_pause`, `browser_resume`, `browser_stop` |
+| **browser** | `browser_get_tabs`, `browser_get_active_tab`, `browser_select_tab`, `browser_close_tab`, `browser_navigate`, `browser_click`, `browser_type`, `browser_fill_field`, `browser_select_option`, `browser_scroll`, `browser_press_key`, `browser_get_page_text`, `browser_get_dom_snapshot`, `browser_get_interactive_elements`, `browser_take_screenshot`, `browser_wait_for_element`, `browser_get_forms`, `browser_extract_table`, `browser_verify`, `browser_fill_form`, `browser_get_downloads`, `browser_get_console_errors`, `browser_solve_captcha`, `browser_pause`, `browser_resume`, `browser_stop` |
 | **network** | `network_list_requests`, `network_get_request`, `network_get_request_details`, `network_search_requests`, `network_list_captures`, `network_configure_capture`, `network_export_har`, `network_import_har`, `network_clear_capture` |
 | **api** (reverse engineering) | `api_analyze_traffic`, `api_list_endpoints`, `api_get_endpoint_details`, `api_generate_openapi`, `api_generate_client` |
 | **form** | `form_profile_save`, `form_profile_list`, `form_profile_delete`, `form_discover`, `form_fill_from_profile`, `form_validate`, `form_preview_submission`, `form_prepare_cover_letter` |
@@ -148,7 +148,7 @@ Deeper dive: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/BROWSER_PROTO
 - **Approvals live in the browser.** The agent cannot answer the popup.
 - **Secrets are redacted** from what the agent sees, from exports and from generated code. Revealing them requires starting the daemon with `--allow-reveal`.
 - **Nothing is persisted** unless you export it. Captured traffic stays in memory.
-- **No CAPTCHA or anti-bot bypass**, and no arbitrary-JavaScript tool.
+- **No anti-bot evasion** and no arbitrary-JavaScript tool. CAPTCHA solving exists only as the opt-in `browser_solve_captcha` (local CapSkip app, needs `--capskip` and YOLO mode; see [SECURITY.md](docs/SECURITY.md)).
 
 ## Repository layout
 

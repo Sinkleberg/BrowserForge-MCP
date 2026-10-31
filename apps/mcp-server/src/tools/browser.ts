@@ -9,6 +9,7 @@ import type { ServerContext } from '../context.js';
 import { pageFromElements, verifyOutcome } from '../verify.js';
 import { toCsv, toRecords, type PageTable } from '../tables.js';
 import { registerTool, untrusted } from './helpers.js';
+import { CaptchaSolver, type CaptchaWidget } from './captcha.js';
 
 const browserId = z.string().max(100).optional().describe('Browser to use when several are connected (see system_status)');
 const tabId = z.number().int().nonnegative().optional().describe('Tab id; defaults to the active tab');
@@ -293,8 +294,31 @@ export function registerBrowserTools(server: McpServer, ctx: ServerContext): voi
     input: z.object({ browserId }),
     run: async ({ browserId }, x) => call('resume', {}, x, { browserId }),
   });
+  registerTool(server, ctx, {
+    name: 'browser_solve_captcha', title: 'Solve CAPTCHA', readOnly: false, destructive: true,
+    description:
+      'Find the CAPTCHA on the page and solve it with CapSkip, a solver running on this machine. Handles reCAPTCHA v2/v3 (including invisible and Enterprise) and Cloudflare Turnstile; hCaptcha is not supported. ' +
+      'Works only when the server was started with --capskip (or CAPSKIP_ENABLED=1) AND the human has turned on YOLO mode in the extension. A solve can take 30-300 seconds. ' +
+      'Returns the token and the field it belongs in (responseField): set it with browser_fill_field (selector = responseField), then continue the form; the submit still goes through the approval gate. For Turnstile, a userAgent is returned that the token is bound to.',
+    input: z.object({ browserId, tabId }),
+    run: async ({ browserId, tabId }, x) => {
+      const solver = ctx.captchaSolver;
+      if (!solver) {
+        throw new BrowserForgeError('PERMISSION_DENIED', 'CAPTCHA solving with CapSkip is off (start the server with --capskip). You can still solve it by looking if the human turned on YOLO mode: click the checkbox in the CAPTCHA iframe, take one jpeg screenshot (quality 50) if an image challenge appears, click the matching tiles, press Verify.');
+      }
+      const st = (await call('status', {}, x, { browserId })) as { yolo?: boolean };
+      if (st?.yolo !== true) {
+        throw new BrowserForgeError('PERMISSION_DENIED', 'CAPTCHA solving needs YOLO mode on in the extension popup (Approvals -> YOLO). Only the human can switch it on.');
+      }
+      const scan = (await call('captcha_scan', tabId === undefined ? {} : { tabId }, x, { browserId })) as { url?: string; widgets?: CaptchaWidget[] };
+      const widgets = scan.widgets ?? [];
+      if (!widgets.length) return untrusted('captcha', { solved: false, error: 'No reCAPTCHA, Turnstile or hCaptcha widget found in the top page. If the CAPTCHA is image-based or loads later, wait for it or look at the page.' });
+      const widget = CaptchaSolver.pick(widgets);
+      if (!widget) return untrusted('captcha', { solved: false, kind: 'hcaptcha', error: 'Only hCaptcha was found, and CapSkip does not support it.' });
+      const result = await solver.solve(widget, scan.url ?? '', x.signal);
+      ctx.logger.info('captcha solve', { kind: widget.kind, solved: result.solved, seconds: result.solveSeconds });
+      return untrusted('captcha', result);
+    },
+  });
   void ACTIONS;
 }
-
-// CAPTCHA solver tool - will be integrated into registerBrowserTools above
-// Add this after browser_resume registration
