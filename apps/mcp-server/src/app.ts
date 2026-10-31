@@ -23,6 +23,7 @@ import { createCaptchaSolver } from './tools/captcha.js';
 import { BrowserHub, isLoopbackHost } from './hub.js';
 import { createMcpServer } from './mcp.js';
 import { ProfileStore } from './profiles.js';
+import { AskQueue } from './asks.js';
 import { systemStatus } from './tools/system.js';
 import { validateWorkflowStep } from './tools/workflow.js';
 import { WorkflowEngine } from './workflow.js';
@@ -63,6 +64,7 @@ export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: 
     flows: new FlowRecorder(path.join(config.configDir, 'flows'), { enabled: config.flows.record }, Date.now, (site, id) => ctx.knowledge.sites.addFlow(site, id)),
     analyses: new AnalysisStore<AnalysisReport>(),
     profiles: new ProfileStore(path.join(config.configDir, 'profiles.json')),
+    asks: new AskQueue(),
     workflows: undefined as never,
     captchaSolver: createCaptchaSolver(config.captcha, logger),
     transports: { http: false, stdio: false, mcpSessions: () => sessions.size },
@@ -93,6 +95,9 @@ export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: 
       void verifyAfterSubmit({ browserId, tabId: typeof args.tabId === 'number' ? args.tabId : undefined, flowKey: browserId, pageUrl: String(first?.pageUrl ?? first?.url ?? '') });
     }
   });
+
+  // The person pressed "Ask the agent" in the popup: queue it for whichever agent asks (tool) or is watching (GET /asks).
+  hub.on('askAgent', (browserId, d) => { ctx.asks.add(browserId, d); });
 
   // The person's own actions (only while they have "Record me" on): their own flow, training examples, and what the site teaches.
   const humanTraces = new HumanTraces();
@@ -212,6 +217,13 @@ export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: 
         if (!originAllowed(req) || req.method === 'OPTIONS') return json(res, 403, { error: 'Cross-origin requests are not allowed' });
         if (!authorized(req)) return json(res, 401, { error: 'Unauthorized' }, { 'www-authenticate': 'Bearer realm="browserforge"' });
         if (url.pathname === '/status' && req.method === 'GET') return json(res, 200, systemStatus(ctx));
+        if (url.pathname === '/asks' && req.method === 'GET') {
+          // Long-poll for "Ask the agent" presses newer than ?after=; used by `browserforge watch`.
+          const ac = new AbortController();
+          res.on('close', () => ac.abort());
+          const waitMs = Math.min(Math.max(Number(url.searchParams.get('wait') ?? 0) || 0, 0), 30) * 1000;
+          return json(res, 200, { asks: await ctx.asks.waitFor(Number(url.searchParams.get('after') ?? 0) || 0, waitMs, ac.signal) });
+        }
         if (url.pathname === '/mcp') return await handleMcp(req, res);
         return json(res, 404, { error: 'Not found' });
       } catch (err) {

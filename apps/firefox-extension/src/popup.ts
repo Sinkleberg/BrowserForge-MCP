@@ -95,6 +95,13 @@ $('takeOver').onclick = () => void send('takeOver').then(render);
 $('handBack').onclick = () => void send('handBack').then(render);
 $('closeAgentWindow').onclick = () => void send('closeAgentWindow').then(render);
 $('agentWindowOn').onchange = (e) => void send('setAgentWindow', { on: (e.target as HTMLInputElement).checked }).then(render);
+$('askAgent').onclick = async () => {
+  const status = $('askStatus');
+  const r = await send('askAgent', { note: $<HTMLInputElement>('askNote').value });
+  status.textContent = r?.ok ? 'Sent. Tell your agent (or let its watcher pick it up) to fill this page.' : (r?.error ?? 'Could not send');
+  if (r?.ok) $<HTMLInputElement>('askNote').value = '';
+  void render();
+};
 $('stop').onclick = () => void send('stop').then(render);
 $('pause').onclick = () => void send(lastState?.paused ? 'resume' : 'pause').then(render);
 $('connect').onclick = async () => {

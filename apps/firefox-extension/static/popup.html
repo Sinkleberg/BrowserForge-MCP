@@ -17,6 +17,11 @@
     <button id="stop" class="danger" type="button" title="Cancel everything in flight and block the agent until you resume">■ STOP</button>
     <button id="pause" type="button">❚❚ Pause</button>
   </section>
+  <section class="ask" aria-label="Ask the agent">
+    <input id="askNote" type="text" maxlength="500" placeholder="Optional note, e.g. fill this form with my profile" spellcheck="false" />
+    <button id="askAgent" class="primary" type="button" title="Tell the connected agent (Claude Code) to work on the page you are looking at">🤖 Ask the agent to fill this page</button>
+    <p id="askStatus" class="hint" role="status"></p>
+  </section>
   <p id="yoloBanner" class="yolo-banner" role="alert" hidden><b>YOLO mode is ON</b> — every approval auto-passes for all agents using this browser. <button id="yoloOff" type="button">Turn off</button></p>
   <p id="locked" class="notice" hidden>Stopped by you — the agent cannot resume. <button id="handBack" type="button">Hand back to the agent</button></p>
 

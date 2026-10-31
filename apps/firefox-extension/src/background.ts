@@ -824,6 +824,19 @@ api.runtime.onMessage.addListener(((msg: any, sender: any, sendResponse: (r: unk
           emitActivity({ action: 'takeover', summary: 'You took over', outcome: 'ok' });
           break;
         }
+        case 'askAgent': {
+          // "Ask the agent": tell whichever agent is connected to work on the page the person is looking at. Nothing is done here; the agent decides and still needs approval for consequential steps.
+          if (!runtime.connected) return sendResponse({ ok: false, error: 'Not connected to the server' });
+          if (runtime.paused) return sendResponse({ ok: false, error: runtime.humanLocked ? 'Stopped: hand control back to the agent first' : 'Paused: resume first' });
+          const t = await activeTab();
+          if (t.id === undefined || !/^https?:/.test(t.url ?? '')) return sendResponse({ ok: false, error: 'Open a web page first' });
+          const note = typeof msg.note === 'string' ? msg.note.trim().slice(0, 500) : '';
+          send({ v: PROTOCOL_VERSION, type: 'event', event: 'ask', data: { at: Date.now(), tabId: t.id, url: (t.url ?? '').slice(0, 4000), title: (t.title ?? '').slice(0, 300) || undefined, note: note || undefined } });
+          let host = '';
+          try { host = new URL(t.url ?? '').host; } catch { /* keep empty */ }
+          emitActivity({ action: 'ask_agent', summary: `You asked the agent to work on ${host || 'this page'}`, tabId: t.id, outcome: 'ok' });
+          break;
+        }
         case 'handBack': setPaused(false, true); emitActivity({ action: 'takeover', summary: 'You handed control back to the agent', outcome: 'ok' }); break;
         case 'closeAgentWindow': {
           if (runtime.agentWindowId !== null) await api.windows.remove(runtime.agentWindowId).catch(() => undefined);

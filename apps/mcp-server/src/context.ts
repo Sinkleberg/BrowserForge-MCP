@@ -7,6 +7,7 @@ import { BrowserHub } from './hub.js';
 import type { AnalysisStore } from './analysis-store.js';
 import type { WorkflowEngine } from './workflow.js';
 import type { ProfileStore } from './profiles.js';
+import type { AskQueue } from './asks.js';
 import type { DocStore, SiteStore, TraceStore } from '@browserforge/knowledge';
 import type { FlowRecorder } from './flows/recorder.js';
 import type { PluginStore } from './plugins/store.js';
@@ -84,6 +85,8 @@ export interface ServerContext {
   analyses: AnalysisStore<import('@browserforge/api-analyzer').AnalysisReport>;
   workflows: WorkflowEngine;
   profiles: ProfileStore;
+  /** "Ask the agent" presses from the extension popup, waiting for an agent to pick them up. */
+  asks: AskQueue;
   /** Optional CapSkip solver (only present when captcha.enabled). */
   captchaSolver?: CaptchaSolver;
   logger: Logger;

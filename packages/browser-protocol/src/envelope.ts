@@ -142,10 +142,28 @@ export const HumanActionEventSchema = z.object({
 });
 export type HumanActionEvent = z.infer<typeof HumanActionEventSchema>;
 
+/**
+ * The person pressed "Ask the agent" in the popup: a request for whichever agent is connected to work on this page. The URL and title are
+ * page data (untrusted); the note is what the person typed.
+ */
+export const AskAgentEventSchema = z.object({
+  v: z.literal(PROTOCOL_VERSION),
+  type: z.literal('event'),
+  event: z.literal('ask'),
+  data: z.object({
+    at: z.number(),
+    tabId: z.number().int(),
+    url: z.string().max(4000),
+    title: z.string().max(300).optional(),
+    note: z.string().max(500).optional(),
+  }),
+});
+export type AskAgentEvent = z.infer<typeof AskAgentEventSchema>;
+
 export const PingSchema = z.object({ v: z.literal(PROTOCOL_VERSION), type: z.enum(['ping', 'pong']) });
 
 /** Everything the server accepts from an (authenticated) extension connection. */
-export const ExtensionMessageSchema = z.union([ResponseSchema, NetworkEventSchema, ActivityEventSchema, HumanActionEventSchema, PingSchema]);
+export const ExtensionMessageSchema = z.union([ResponseSchema, NetworkEventSchema, ActivityEventSchema, HumanActionEventSchema, AskAgentEventSchema, PingSchema]);
 export type ExtensionMessage = z.infer<typeof ExtensionMessageSchema>;
 
 export function errorResponse(id: string, error: Omit<ProtocolError, 'retryable'> & { retryable?: boolean }): Response {

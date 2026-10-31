@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer } from 'ws';
-import { ACTIONS, ExtensionMessageSchema, HelloSchema, PROTOCOL_VERSION, isActionName, type ActionName, type Capabilities, type HumanActionEvent, type Hello, type NetworkEvent } from '@browserforge/browser-protocol';
+import { ACTIONS, ExtensionMessageSchema, HelloSchema, PROTOCOL_VERSION, isActionName, type ActionName, type Capabilities, type HumanActionEvent, type AskAgentEvent, type Hello, type NetworkEvent } from '@browserforge/browser-protocol';
 import { BrowserForgeError, LIMITS, clamp, safeEqual, type Logger } from '@browserforge/shared';
 
 export interface HubOptions {
@@ -73,6 +73,8 @@ export interface HubEvents {
   network: [browserId: string, data: NetworkEvent['data']];
   /** The person (not an agent) did something while "Record me" was on. */
   humanAction: [browserId: string, data: HumanActionEvent['data']];
+  /** The person pressed "Ask the agent" in the popup. */
+  askAgent: [browserId: string, data: AskAgentEvent['data']];
   connected: [browserId: string];
   disconnected: [browserId: string];
   /** A state-changing browser action succeeded. `flow` is what the page reported about the elements it touched (stripped from the result the agent sees). */
@@ -223,7 +225,10 @@ export class BrowserHub extends EventEmitter<HubEvents> {
       }
       case 'event':
         if (msg.event === 'network') this.emit('network', peer.id, msg.data);
-        else if (msg.event === 'human') {
+        else if (msg.event === 'ask') {
+          this.opts.logger.info('person asked the agent', { browser: peer.id, tab: msg.data.tabId });
+          this.emit('askAgent', peer.id, msg.data);
+        } else if (msg.event === 'human') {
           this.opts.logger.debug('human action', { browser: peer.id, tab: msg.data.tabId, kind: msg.data.kind });
           this.emit('humanAction', peer.id, msg.data);
         } else {

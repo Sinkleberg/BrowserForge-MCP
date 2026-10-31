@@ -28,7 +28,7 @@ Every message has `v` (protocol version, currently `1`) and `type`.
 | server → ext | `request` | `id` (≤100 chars), `action`, `args` (validated), optional `timeoutMs` (soft deadline) |
 | ext → server | `response` | `id`, `ok:true`, `result` — or `ok:false`, `error:{code,message,retryable,details?}` |
 | server → ext | `cancel` | `id` — abandon a request |
-| ext → server | `event` | `event:"network"` (captured exchange) or `event:"activity"` (log line) |
+| ext → server | `event` | `event:"network"` (captured exchange), `event:"activity"` (log line) or `event:"ask"` (the person pressed "Ask the agent": tab, URL, title, optional note) |
 | both | `ping` / `pong` | keep-alive |
 
 Invalid frames are dropped (6 strikes closes the socket). A `response` for an unknown id is ignored.

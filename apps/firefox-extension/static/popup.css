@@ -37,3 +37,8 @@ code { font-family: ui-monospace, monospace; background: var(--card); padding: 0
 .yolo-banner { background: var(--danger); color: #fff; border-radius: 6px; padding: 6px 8px; margin: 0 0 8px; } .yolo-banner button { margin-left: 6px; padding: 2px 8px; color: var(--fg); }
 .yolo-opt { color: var(--danger); font-weight: 600; }
 .activity .approved { color: var(--ok); } .activity .yolo { color: var(--danger); } .activity .timeout, .activity .cancelled { color: var(--muted); }
+
+.ask { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.ask input { font: inherit; padding: 6px 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 6px; }
+.ask button { width: 100%; font-weight: 600; }
+.ask .hint { margin: 0; min-height: 1em; }

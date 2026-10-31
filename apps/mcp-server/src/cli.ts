@@ -29,6 +29,7 @@ Usage:
   browserforge logs   [--tail N] [--level debug|info|warn|error] [--since 30m|2h|1d]   Read the saved log (see docs/TROUBLESHOOTING.md)
   browserforge diagnostics [--since 1d]                                   A report to paste into a bug: versions, settings, recent warnings and errors
   browserforge doctor [--port N]                                         Check a running daemon
+  browserforge watch  [--port N]                                         Print one line each time you press "Ask the agent" in the extension (for Claude Code's Monitor tool)
   browserforge print-config <codex|claude> [--port N]                    Print client configuration snippets
 
 Local decider (browser_run_goal): [--decider qwen|cascade|laya] [--decider-url http://127.0.0.1:11434] [--decider-model qwen3:4b-instruct]
@@ -301,6 +302,39 @@ async function main(): Promise<void> {
       const status = await fetch(`${base}/status`, { headers: { authorization: `Bearer ${cfg.mcpToken}` } }).then((r) => r.json());
       process.stdout.write(JSON.stringify(status, null, 2) + '\n');
       return;
+    }
+    case 'watch': {
+      // One stdout line per "Ask the agent" press, so a client that can follow a command's output (Claude Code's Monitor tool) wakes up.
+      // Only the id, tab and the person's own note are printed; the page's URL and title are untrusted and stay behind the tool.
+      const cfg = buildConfig({ port });
+      const base = `http://127.0.0.1:${cfg.port}/asks`;
+      const get = async (after: number, wait: number) => {
+        const r = await fetch(`${base}?after=${after}&wait=${wait}`, { headers: { authorization: `Bearer ${cfg.mcpToken}` } });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return ((await r.json()) as { asks: { id: number; tabId: number; note?: string }[] }).asks;
+      };
+      let last: number;
+      for (;;) {
+        try {
+          last = (await get(0, 0)).reduce((m, a) => Math.max(m, a.id), 0);
+          break;
+        } catch (e) {
+          process.stderr.write(`watch: waiting for the daemon on port ${cfg.port} (${e instanceof Error ? e.message : String(e)})\n`);
+          await new Promise((r) => setTimeout(r, 3000));
+        }
+      }
+      process.stdout.write(`watching for "Ask the agent" presses on port ${cfg.port}\n`);
+      for (;;) {
+        try {
+          for (const a of await get(last, 25)) {
+            last = Math.max(last, a.id);
+            const note = (a.note ?? '').replace(/\s+/g, ' ').slice(0, 200);
+            process.stdout.write(`ASK #${a.id} tab ${a.tabId}${note ? ` note: ${note}` : ''} -> call browser_pending_requests\n`);
+          }
+        } catch {
+          await new Promise((r) => setTimeout(r, 3000));
+        }
+      }
     }
     case 'print-config': {
       const cfg = buildConfig({ port });
