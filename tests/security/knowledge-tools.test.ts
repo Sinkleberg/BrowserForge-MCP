@@ -36,7 +36,9 @@ describe('knowledge tools: path safety and privacy', () => {
     expect(found.data.data[0].text).toContain('Tuesday');
     const list = await stack.call('knowledge_list');
     expect(list.data.documents).toHaveLength(1);
-    expect(list.data.decider.reachable).toBeTypeOf('boolean');
+    expect(list.data.decider.qwen.reachable).toBeTypeOf('boolean');
+    expect(list.data.decider.laya.reachable).toBeTypeOf('boolean');
+    expect(list.data.decider.mode).toBe('qwen'); // measured: Qwen beats Laya on page steps, so it is the default
     expect((await stack.call('knowledge_remove', { id: list.data.documents[0].id })).data.removed).toBe(true);
   });
 
@@ -57,6 +59,7 @@ describe('knowledge tools: path safety and privacy', () => {
   });
 
   it('refuses to start with a decider that is not on this machine', () => {
-    expect(() => createApp({ port: 0, configDir: fs.mkdtempSync(path.join(os.tmpdir(), 'bf-cfg-')), decider: { url: 'http://10.0.0.5:11434', model: 'm', minConfidence: 0.7, timeoutMs: 1000 } })).toThrow(/this machine/);
+    expect(() => createApp({ port: 0, configDir: fs.mkdtempSync(path.join(os.tmpdir(), 'bf-cfg-')), decider: { mode: 'cascade', url: 'http://10.0.0.5:11434', model: 'm', minConfidence: 0.7, timeoutMs: 1000, laya: { url: '', model: '', minConfidence: 0.5 } } })).toThrow(/this machine/);
+    expect(() => createApp({ port: 0, configDir: fs.mkdtempSync(path.join(os.tmpdir(), 'bf-cfg-')), decider: { mode: 'cascade', url: '', model: '', minConfidence: 0.7, timeoutMs: 1000, laya: { url: 'http://192.168.1.9:11435', model: 'laya', minConfidence: 0.5 } } })).toThrow(/this machine/);
   });
 });

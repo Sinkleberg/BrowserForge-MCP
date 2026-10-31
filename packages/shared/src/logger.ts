@@ -25,11 +25,17 @@ function sanitize(meta?: Record<string, unknown>): Record<string, unknown> | und
   return out;
 }
 
-/** Logs to stderr only (stdout is reserved for the MCP stdio protocol). */
-export function createLogger(level: LogLevel = 'info', sink: (line: string) => void = (l) => process.stderr.write(l + '\n')): Logger {
+/**
+ * Logs to stderr (stdout is reserved for the MCP stdio protocol) at `level` and above. If a `file` is given, it receives EVERY level,
+ * so a problem can be investigated after the fact even when the terminal was quiet. Both get the same redacted, content-free lines.
+ */
+export function createLogger(level: LogLevel = 'info', sink: (line: string) => void = (l) => process.stderr.write(l + '\n'), file?: { write(line: string): void }): Logger {
   const emit = (lvl: LogLevel, msg: string, meta?: Record<string, unknown>) => {
-    if (order[lvl] < order[level]) return;
-    sink(JSON.stringify({ t: new Date().toISOString(), level: lvl, msg: redactString(msg), ...(sanitize(meta) ?? {}) }));
+    const toTerminal = order[lvl] >= order[level];
+    if (!toTerminal && !file) return;
+    const line = JSON.stringify({ t: new Date().toISOString(), level: lvl, msg: redactString(msg), ...(sanitize(meta) ?? {}) });
+    if (toTerminal) sink(line);
+    file?.write(line);
   };
   return {
     debug: (m, x) => emit('debug', m, x),

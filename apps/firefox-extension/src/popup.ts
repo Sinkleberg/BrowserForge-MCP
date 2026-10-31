@@ -29,6 +29,13 @@ async function render(): Promise<void> {
   $<HTMLParagraphElement>('yoloBanner').hidden = !s.yolo;
   $<HTMLInputElement>('yoloOn').checked = s.yolo;
   $<HTMLInputElement>('soundOn').checked = s.approvalSound;
+  $<HTMLInputElement>('agentWindowOn').checked = s.agentWindow;
+  $('agentWindowState').textContent = s.agentWindow ? (s.agentWindowOpen ? 'The agent window is open.' : 'The agent window opens when the agent first navigates.') : 'Off: the agent works in whichever tab is active.';
+  $<HTMLButtonElement>('closeAgentWindow').disabled = !s.agentWindowOpen;
+  $<HTMLParagraphElement>('recBanner').hidden = !s.recordHuman;
+  $<HTMLInputElement>('recOn').checked = s.recordHuman;
+  $<HTMLInputElement>('recValues').checked = s.recordValues;
+  if (document.activeElement !== $('recTask')) $<HTMLInputElement>('recTask').value = s.recordTask;
   $('error').textContent = s.connected ? '' : s.lastError;
   if (!editing) {
     $<HTMLInputElement>('serverUrl').value = s.serverUrl;
@@ -37,7 +44,8 @@ async function render(): Promise<void> {
   $<HTMLInputElement>('capEnabled').checked = s.capture.enabled;
   $<HTMLInputElement>('capBodies').checked = s.capture.captureBodies;
   $<HTMLInputElement>('capBodies').disabled = !s.bodyCaptureAvailable;
-  $('bodiesNote').textContent = s.bodyCaptureAvailable ? '' : '(needs permission)';
+  $('bodiesNote').textContent = s.bodyCaptureAvailable ? '' : s.bodyCapturePossible ? '(needs permission)' : '(not in this build: load the chrome-bodies folder, see docs/INSTALL.md)';
+  $<HTMLButtonElement>('grantBodies').hidden = s.bodyCaptureAvailable || !s.bodyCapturePossible;
 
   const approvals = $<HTMLElement>('approvals');
   approvals.hidden = s.pendingApprovals.length === 0;
@@ -83,6 +91,10 @@ async function render(): Promise<void> {
   );
 }
 
+$('takeOver').onclick = () => void send('takeOver').then(render);
+$('handBack').onclick = () => void send('handBack').then(render);
+$('closeAgentWindow').onclick = () => void send('closeAgentWindow').then(render);
+$('agentWindowOn').onchange = (e) => void send('setAgentWindow', { on: (e.target as HTMLInputElement).checked }).then(render);
 $('stop').onclick = () => void send('stop').then(render);
 $('pause').onclick = () => void send(lastState?.paused ? 'resume' : 'pause').then(render);
 $('connect').onclick = async () => {
@@ -103,6 +115,10 @@ $('yoloOn').onchange = (e) => {
   void send('setYolo', { on }).then(render);
 };
 $('yoloOff').onclick = () => void send('setYolo', { on: false }).then(render);
+$('recOn').onchange = (e) => void send('setRecord', { on: (e.target as HTMLInputElement).checked }).then(render);
+$('recOff').onclick = () => void send('setRecord', { on: false }).then(render);
+$('recValues').onchange = (e) => void send('setRecord', { values: (e.target as HTMLInputElement).checked }).then(render);
+$('recTask').onchange = (e) => void send('setRecord', { task: (e.target as HTMLInputElement).value }).then(render);
 $('soundOn').onchange = (e) => void send('setSound', { on: (e.target as HTMLInputElement).checked });
 $('clearHistory').onclick = () => void send('clearHistory').then(render);
 $('exportHistory').onclick = async () => {

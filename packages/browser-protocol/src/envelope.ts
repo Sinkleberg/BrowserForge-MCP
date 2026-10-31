@@ -111,10 +111,41 @@ export const ActivityEventSchema = z.object({
   data: z.object({ at: z.number(), action: z.string().max(64), summary: z.string().max(300), tabId: z.number().int().optional(), outcome: z.enum(['ok', 'error', 'pending', 'denied']) }),
 });
 
+/**
+ * Something the PERSON did in the browser (not an agent), sent only while "Record me" is on. It describes the element and the page
+ * (control rows without refs), never a value unless the person turned "Store my values" on, and never for password-like fields.
+ */
+export const HumanActionEventSchema = z.object({
+  v: z.literal(PROTOCOL_VERSION),
+  type: z.literal('event'),
+  event: z.literal('human'),
+  data: z.object({
+    at: z.number(),
+    tabId: z.number().int().optional(),
+    kind: z.enum(['click', 'fill', 'select', 'press', 'upload']),
+    url: z.string().max(4000),
+    frameUrl: z.string().max(4000).optional(),
+    locator: z.record(z.string().max(30), z.string().max(600)).optional(),
+    fieldLabel: z.string().max(120).optional(),
+    value: z.string().max(5000).optional(),
+    key: z.string().max(30).optional(),
+    sensitive: z.boolean().optional(),
+    consequential: z.boolean().optional(),
+    custom: z.boolean().optional(),
+    /** 1-based position of the touched control in `table`. */
+    row: z.number().int().positive().max(1000).optional(),
+    /** The page's control rows just before the action: "n | kind | label" (no refs). */
+    table: z.array(z.string().max(200)).max(120).optional(),
+    /** What the person said they are doing, if they said. */
+    task: z.string().max(200).optional(),
+  }),
+});
+export type HumanActionEvent = z.infer<typeof HumanActionEventSchema>;
+
 export const PingSchema = z.object({ v: z.literal(PROTOCOL_VERSION), type: z.enum(['ping', 'pong']) });
 
 /** Everything the server accepts from an (authenticated) extension connection. */
-export const ExtensionMessageSchema = z.union([ResponseSchema, NetworkEventSchema, ActivityEventSchema, PingSchema]);
+export const ExtensionMessageSchema = z.union([ResponseSchema, NetworkEventSchema, ActivityEventSchema, HumanActionEventSchema, PingSchema]);
 export type ExtensionMessage = z.infer<typeof ExtensionMessageSchema>;
 
 export function errorResponse(id: string, error: Omit<ProtocolError, 'retryable'> & { retryable?: boolean }): Response {

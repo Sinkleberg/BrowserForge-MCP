@@ -1,0 +1,21 @@
+{
+  "name": "browserforge-plugin-hello",
+  "version": "0.1.0",
+  "description": "The smallest useful BrowserForge plugin: greets, and keeps notes in its own private folder.",
+  "type": "module",
+  "main": "index.js",
+  "keywords": ["browserforge-plugin"],
+  "license": "MIT",
+  "browserforge": {
+    "id": "hello",
+    "toolPrefix": "hello",
+    "description": "Example plugin: a greeting tool and a tiny notebook.",
+    "instructions": "hello_note_add / hello_note_list keep short notes between sessions.",
+    "permissions": {
+      "files": { "read": ["data"], "write": ["data"] }
+    }
+  },
+  "dependencies": {
+    "@browserforge/plugin-sdk": "*"
+  }
+}

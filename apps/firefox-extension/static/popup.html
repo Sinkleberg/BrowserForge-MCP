@@ -18,7 +18,7 @@
     <button id="pause" type="button">❚❚ Pause</button>
   </section>
   <p id="yoloBanner" class="yolo-banner" role="alert" hidden><b>YOLO mode is ON</b> — every approval auto-passes for all agents using this browser. <button id="yoloOff" type="button">Turn off</button></p>
-  <p id="locked" class="notice" hidden>Stopped by you — the agent cannot resume. Press Resume to allow it again.</p>
+  <p id="locked" class="notice" hidden>Stopped by you — the agent cannot resume. <button id="handBack" type="button">Hand back to the agent</button></p>
 
   <section id="approvals" aria-label="Pending approvals" hidden>
     <h2>Needs your approval</h2>
@@ -30,6 +30,27 @@
     <label class="check"><input id="soundOn" type="checkbox" /> Play a sound when an approval is waiting</label>
     <label class="check yolo-opt"><input id="yoloOn" type="checkbox" /> YOLO: auto-approve everything (no prompts)</label>
     <p class="hint">YOLO applies to every agent connected to this browser, including passwords, submits and sends, and stays on until you switch it off. STOP still halts everything. Every decision is saved in History.</p>
+  </details>
+
+  <p id="recBanner" class="yolo-banner" role="status" hidden><b>● Recording what you do</b> — clicks and form fields on the pages you use are saved as a flow and training examples on this computer. <button id="recOff" type="button">Stop recording</button></p>
+
+  <details>
+    <summary>Agent window</summary>
+    <label class="check"><input id="agentWindowOn" type="checkbox" /> The agent works in its own window (not in the tabs I am using)</label>
+    <div class="row">
+      <button id="takeOver" type="button" title="Stop the agent and bring its window to the front">✋ Take over</button>
+      <button id="closeAgentWindow" type="button">Close agent window</button>
+    </div>
+    <p id="agentWindowState" class="hint"></p>
+    <p class="hint">The agent opens its own window the first time it navigates and keeps its pages there. It can still use one of your tabs if it selects it on purpose. "Take over" stops the agent and shows its window so you can finish by hand; "Hand back" lets it continue. The window shares your logins: it is not a separate account or a sandbox.</p>
+  </details>
+
+  <details>
+    <summary>Record me</summary>
+    <label class="check"><input id="recOn" type="checkbox" /> Record what I do in this browser (off by default)</label>
+    <label class="check"><input id="recValues" type="checkbox" /> Also keep the text I type (otherwise only which field it went into)</label>
+    <label>What I'm doing <input id="recTask" type="text" maxlength="200" placeholder="e.g. Apply for a job with my CV" spellcheck="false" /></label>
+    <p class="hint">Saved only on this computer, never sent anywhere else. Passwords, card numbers and one-time codes are never recorded, and private windows are never recorded. It captures your clicks, selections and typed fields in the main page of a tab. The toolbar shows REC while it is on.</p>
   </details>
 
   <details id="connection" open>

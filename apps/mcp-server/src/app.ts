@@ -1,4 +1,12 @@
-import { DocStore, TraceStore } from '@browserforge/knowledge';
+import { DocStore, SiteStore, TraceStore } from '@browserforge/knowledge';
+import { HumanTraces, humanRunId } from './flows/human.js';
+import { feedSites, feedSitesHuman } from './sites-feed.js';
+import { pageFromElements, verifyOutcome } from './verify.js';
+import { createLogFile } from '@browserforge/shared';
+import { FlowRecorder } from './flows/recorder.js';
+import { loadPlugins } from './plugins/loader.js';
+import { PluginStore } from './plugins/store.js';
+import { emptyRegistry } from './plugins/types.js';
 import http from 'node:http';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -33,18 +41,25 @@ const MAX_SESSIONS = 50;
 
 export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: string[]; extraAllowedOrigins?: string[]; registerExtra?: (server: McpServer, ctx: ServerContext) => void } = {}): App {
   const config = buildConfig(overrides);
-  const logger: Logger = createLoggerFor(config);
+  const logFile = config.logging.file ? createLogFile(path.join(config.configDir, 'logs'), { retentionDays: config.logging.retentionDays }) : undefined;
+  const logger: Logger = createLoggerFor(config, logFile);
+  logger.info('server created', { version: SERVER_VERSION, node: process.version, platform: process.platform, decider: config.decider.mode, flows: config.flows.record, logFile: Boolean(logFile) });
   const hub = new BrowserHub({ extensionToken: config.extensionToken, serverVersion: SERVER_VERSION, logger, extraAllowedOrigins: overrides.extraAllowedOrigins });
   const store = new NetworkStore();
   const sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: McpServer }>();
 
   const ctx: ServerContext = {
-    config, hub, store, logger, startedAt: Date.now(),
+    config, hub, store, logger, logFile, startedAt: Date.now(),
     tools: new Map(),
     knowledge: {
       traces: new TraceStore(path.join(config.configDir, 'knowledge'), { enabled: config.knowledge.traces, retentionDays: config.knowledge.retentionDays }),
       docs: new DocStore(path.join(config.configDir, 'knowledge')),
+      sites: new SiteStore(path.join(config.configDir, 'knowledge'), Date.now, config.knowledge.traces),
     },
+    extraExporters: [],
+    pluginStore: new PluginStore(config.configDir),
+    plugins: emptyRegistry(),
+    flows: new FlowRecorder(path.join(config.configDir, 'flows'), { enabled: config.flows.record }, Date.now, (site, id) => ctx.knowledge.sites.addFlow(site, id)),
     analyses: new AnalysisStore<AnalysisReport>(),
     profiles: new ProfileStore(path.join(config.configDir, 'profiles.json')),
     workflows: undefined as never,
@@ -63,6 +78,44 @@ export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: 
       return r.approved === true;
     },
   });
+
+  hub.on('actionDone', (browserId, action, args, result, flow) => {
+    ctx.flows.handle(browserId, action, args, result, flow);
+    feedSites(ctx.knowledge.sites, action, result, flow);
+    // After a submit-like step, look at the page a moment later: a confirmation or an error says how the task went, with no model involved.
+    if (flow?.some((p) => p.consequential === true) && (action === 'click' || action === 'press_key' || action === 'type')) {
+      const first = flow.find((p) => typeof p.pageUrl === 'string' || typeof p.url === 'string');
+      void verifyAfterSubmit({ browserId, tabId: typeof args.tabId === 'number' ? args.tabId : undefined, flowKey: browserId, pageUrl: String(first?.pageUrl ?? first?.url ?? '') });
+    }
+  });
+
+  // The person's own actions (only while they have "Record me" on): their own flow, training examples, and what the site teaches.
+  const humanTraces = new HumanTraces();
+  hub.on('humanAction', (browserId, d) => {
+    const r = ctx.flows.handleHuman(browserId, d);
+    if (!r) return;
+    feedSitesHuman(ctx.knowledge.sites, d, r.isNew);
+    const step = humanTraces.step(d, r.flowId, r.param);
+    if (step) ctx.knowledge.traces.record(step);
+    if (d.consequential && (d.kind === 'click' || d.kind === 'press')) void verifyAfterSubmit({ browserId, tabId: d.tabId, flowKey: `human:${browserId}`, pageUrl: d.url, runId: humanRunId(r.flowId) });
+  });
+
+  /** A moment after a submit, look at the page: a confirmation or an error says how the task went, with no model involved. */
+  async function verifyAfterSubmit(o: { browserId: string; tabId?: number; flowKey: string; pageUrl: string; runId?: string }): Promise<void> {
+    try {
+      await new Promise((r) => setTimeout(r, 1500));
+      const page = pageFromElements(await hub.call('interactive_elements', { ...(o.tabId === undefined ? {} : { tabId: o.tabId }), format: 'table', limit: 120 }, { browserId: o.browserId, timeoutMs: 15_000 }));
+      const v = verifyOutcome(page);
+      if (v.verdict === 'unknown') return;
+      const host = SiteStore.hostOf(o.pageUrl || page.url);
+      if (host) ctx.knowledge.sites.outcome(host, v.verdict);
+      ctx.flows.setOutcome(o.flowKey, v.verdict);
+      if (o.runId) ctx.knowledge.traces.label(o.runId, v.verdict === 'success' ? 'good' : 'bad', `auto: ${v.signals.join('; ')}`.slice(0, 300), 'auto');
+      logger.info('task outcome', { browser: o.browserId, host, verdict: v.verdict, signals: v.signals.join('; ') });
+    } catch {
+      /* the page may have navigated away or the browser disconnected: no verdict */
+    }
+  }
 
   hub.on('network', (browserId, d) => {
     store.upsertLive(browserId, d.requestId, {
@@ -179,8 +232,9 @@ export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: 
 
   const app: App = {
     ctx, httpServer, port: config.port,
-    listen: () =>
-      new Promise((resolve, reject) => {
+    listen: async () => {
+      await loadPlugins(ctx); // plugins are imported before any client can connect
+      return new Promise<number>((resolve, reject) => {
         httpServer.once('error', reject);
         httpServer.listen(config.port, config.host, () => {
           const addr = httpServer.address();
@@ -191,8 +245,10 @@ export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: 
           logger.info('listening', { host: config.host, port });
           resolve(port);
         });
-      }),
+      });
+    },
     serveStdio: async () => {
+      await loadPlugins(ctx);
       ctx.transports.stdio = true;
       const server = createMcpServer(ctx, (s) => overrides.registerExtra?.(s, ctx));
       await server.connect(new StdioServerTransport());
@@ -203,6 +259,8 @@ export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: 
       hub.close();
       httpServer.closeAllConnections();
       await new Promise<void>((r) => httpServer.close(() => r()));
+      logger.info('server closed');
+      logFile?.close();
     },
   };
   return app;

@@ -66,7 +66,7 @@ describe('profile store', () => {
     s.save('main', { phone: '1' }, 'merge');
     expect(s.get('main')).toEqual({ email: 'a@b.c', phone: '1' });
     expect(JSON.stringify(s.list())).not.toContain('a@b.c');
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o600);
     expect(s.delete('main')).toBe(true);
     expect(() => s.get('main')).toThrow();
   });

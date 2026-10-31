@@ -111,6 +111,107 @@ describe.each(kinds)('browser control — %s', (kind) => {
     expect((await gated).data.error.code).toBe('APPROVAL_DENIED');
   });
 
+  it('uploads into a hidden, unlabeled file box that only exists inside a dialog (job-portal style)', async () => {
+    const dir = path.join(stack.home, 'files', 'cv');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'tailored-cv.pdf'), '%PDF-1.4 test');
+    await ok('browser_navigate', { url: demo() + '/upload' });
+    // Before the dialog opens there is no file box: the tool says what to do instead of failing silently.
+    const early = inner(await ok('browser_fill_form', { files: [{ key: 'cv', filePath: path.join(dir, 'tailored-cv.pdf') }] }));
+    expect(early.notFound[0]).toMatch(/open the upload dialog first/); // answered without an approval prompt
+    expect((await browser.popupSnapshot()).approvals).toBe(0);
+    await ok('browser_click', { selector: '#open-upload' });
+    const listed = inner(await ok('browser_get_interactive_elements', { format: 'table' })).rows as string[];
+    expect(listed.some((r) => r.includes('input:file'))).toBe(true); // hidden file boxes are visible to the agent
+    const pending = call('browser_fill_form', { files: [{ key: 'curriculum', filePath: path.join(dir, 'tailored-cv.pdf') }] });
+    expect(await browser.decideApproval(true)).toContain('tailored-cv.pdf');
+    const r = await pending;
+    expect(r.isError, JSON.stringify(r.data)).toBe(false);
+    expect(inner(r.data).filled[0]).toMatchObject({ file: 'tailored-cv.pdf', accepted: true });
+    expect(await browser.evalInPage<string>('return window.__uploaded')).toBe('tailored-cv.pdf');
+  });
+
+  it('closes tabs it opened without asking, but asks before closing one of the human\'s tabs', async () => {
+    await ok('browser_navigate', { url: demo() + '/' });
+    const mine = inner(await ok('browser_get_active_tab')).tabId as number;
+    const opened = inner(await ok('browser_navigate', { url: demo() + '/gate', newTab: true })).tabId as number;
+    expect(inner(await ok('browser_close_tab', { tabId: opened }))).toMatchObject({ closed: true, openedByAgent: true });
+    expect(inner(await ok('browser_get_tabs')).tabs.some((t: any) => t.tabId === opened)).toBe(false);
+    await ok('browser_select_tab', { tabId: mine });
+    const pending = call('browser_close_tab', { tabId: mine });
+    expect(await browser.decideApproval(false)).toMatch(/close tab/i);
+    expect((await pending).data.error.code).toBe('APPROVAL_DENIED');
+    expect(inner(await ok('browser_get_tabs')).tabs.some((t: any) => t.tabId === mine)).toBe(true);
+    expect((await call('browser_close_tab', { tabId: 999999 })).data.error.code).toBe('TAB_NOT_FOUND');
+  });
+
+  it('after 3 failed attempts on a tab it tells the agent to take a screenshot; looking resets the count; a human "no" is not a failure', async () => {
+    await ok('browser_navigate', { url: demo() + '/gate' }); // navigating resets the count
+    const miss = () => call('browser_click', { selector: '#does-not-exist' });
+    const r1 = await miss();
+    const r2 = await miss();
+    expect(r1.isError && r2.isError).toBe(true);
+    expect(r1.data.hint).toBeUndefined();
+    expect(r2.data.hint).toBeUndefined();
+    const r3 = await miss();
+    expect(r3.data.error.code).toBe('ELEMENT_NOT_FOUND');
+    expect(r3.data.hint).toMatch(/take ONE screenshot/);
+    await ok('browser_take_screenshot', { format: 'jpeg', quality: 50 });
+    expect((await miss()).data.hint).toBeUndefined(); // counting starts over after looking
+    await ok('browser_navigate', { url: demo() + '/gate' });
+    for (let i = 0; i < 3; i++) {
+      const p = call('browser_click', { selector: '#icon-send' });
+      await browser.decideApproval(false);
+      const d = await p;
+      expect(d.data.error.code).toBe('APPROVAL_DENIED');
+      expect(d.data.hint).toBeUndefined();
+    }
+  });
+
+  it('sees and drives controls inside same-origin and cross-origin iframes', async () => {
+    await ok('browser_navigate', { url: demo() + '/frames' });
+    await waitFor(async () => (await browser.evalInPage<boolean>("return document.getElementById('cross').contentDocument === null && document.readyState === 'complete'")), { what: 'frames to load' });
+    await new Promise((r) => setTimeout(r, 800));
+    const t = inner(await ok('browser_get_interactive_elements', { format: 'table' }));
+    const rows = t.rows as string[];
+    expect(rows.filter((r) => /Frame email/.test(r)).length).toBe(2); // one per iframe
+    expect(rows.some((r) => /Parent button/.test(r))).toBe(true);
+    expect(rows.map((r) => Number(r.split(' | ')[0]))).toEqual(rows.map((_, i) => i + 1)); // renumbered as one list
+    expect(t.frames.length).toBe(2);
+    expect(inner(await ok('browser_get_interactive_elements', { format: 'table', includeFrames: false })).rows.some((r: string) => /Frame email/.test(r))).toBe(false);
+
+    // Type into BOTH iframes by ref and press each Save button; the parent collects what each frame reports.
+    for (const [i, email] of [['0', 'same@x.test'], ['1', 'cross@x.test']] as const) {
+      const emailRow = rows.filter((r) => /Frame email/.test(r))[Number(i)]!;
+      const saveRow = rows.filter((r) => /Save frame/.test(r))[Number(i)]!;
+      await ok('browser_type', { ref: emailRow.split(' | ')[3], text: email });
+      const clicked = inner(await ok('browser_click', { ref: saveRow.split(' | ')[3], observe: true }));
+      expect(clicked.clicked).toBe(true);
+      expect(clicked.observation.data.rows.length).toBeGreaterThan(0); // act-and-observe in the same call
+    }
+    expect(await browser.evalInPage<{ email: string }[]>('return window.__msgs')).toEqual([{ email: 'same@x.test' }, { email: 'cross@x.test' }]);
+
+    // Forms and text inside frames are visible too, and a frame form can be filled by its ref.
+    const forms = inner(await ok('browser_get_forms')).forms as any[];
+    const frameForm = forms.find((f) => f.frame && JSON.stringify(f).includes('Frame phone'));
+    expect(frameForm).toBeTruthy();
+    const filled = inner(await ok('browser_fill_form', { formRef: frameForm.ref, fields: [{ key: 'Frame phone', value: '+39 111' }] }));
+    expect(filled.filled[0].key).toBe('Frame phone');
+    expect(inner(await ok('browser_get_page_text')).text).toMatch(/--- iframe .*frame-form ---[\s\S]*Frame email/);
+  });
+
+  it('act-and-observe: the same call returns the updated page, and a failed read does not hide the action', async () => {
+    await ok('browser_navigate', { url: demo() + '/signup' });
+    const fields = inner(await ok('browser_get_interactive_elements', { format: 'table' })).rows as string[];
+    const first = fields.find((r) => /First name/.test(r))!.split(' | ')[3]!;
+    const r = inner(await ok('browser_type', { ref: first, text: 'Ada', observe: true }));
+    expect(r.typed ?? r.filled ?? true).toBeTruthy();
+    expect(r.observation.untrustedWebContent).toBe(true);
+    expect(r.observation.data.rows.find((x: string) => /First name/.test(x))).toMatch(/\[filled\]/); // the observation already shows the field is filled
+    const without = inner(await ok('browser_scroll', { direction: 'down' }));
+    expect(without.observation).toBeUndefined(); // opt-in only
+  });
+
   it('reports the connected browser in system_status', async () => {
     const s = await ok('system_status');
     expect(s.connected).toBe(true);

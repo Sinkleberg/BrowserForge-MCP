@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer } from 'ws';
-import { ACTIONS, ExtensionMessageSchema, HelloSchema, PROTOCOL_VERSION, isActionName, type ActionName, type Capabilities, type Hello, type NetworkEvent } from '@browserforge/browser-protocol';
+import { ACTIONS, ExtensionMessageSchema, HelloSchema, PROTOCOL_VERSION, isActionName, type ActionName, type Capabilities, type HumanActionEvent, type Hello, type NetworkEvent } from '@browserforge/browser-protocol';
 import { BrowserForgeError, LIMITS, clamp, safeEqual, type Logger } from '@browserforge/shared';
 
 export interface HubOptions {
@@ -71,8 +71,12 @@ export interface PeerInfo {
 
 export interface HubEvents {
   network: [browserId: string, data: NetworkEvent['data']];
+  /** The person (not an agent) did something while "Record me" was on. */
+  humanAction: [browserId: string, data: HumanActionEvent['data']];
   connected: [browserId: string];
   disconnected: [browserId: string];
+  /** A state-changing browser action succeeded. `flow` is what the page reported about the elements it touched (stripped from the result the agent sees). */
+  actionDone: [browserId: string, action: string, args: Record<string, unknown>, result: unknown, flow: Record<string, unknown>[] | undefined];
 }
 
 const LOOPBACK_HOST_RE = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i;
@@ -219,8 +223,13 @@ export class BrowserHub extends EventEmitter<HubEvents> {
       }
       case 'event':
         if (msg.event === 'network') this.emit('network', peer.id, msg.data);
-        else {
+        else if (msg.event === 'human') {
+          this.opts.logger.debug('human action', { browser: peer.id, tab: msg.data.tabId, kind: msg.data.kind });
+          this.emit('humanAction', peer.id, msg.data);
+        } else {
           peer.activity.push(msg.data);
+          // The browser's own timeline (clicks, approvals, YOLO, STOP) joins the server's log. Summaries carry the host and a ref, never typed values.
+          this.opts.logger.info('browser activity', { browser: peer.id, tab: msg.data.tabId, action: msg.data.action, summary: msg.data.summary, outcome: msg.data.outcome });
           if (peer.activity.length > LIMITS.maxActivityLog) peer.activity.shift();
         }
         return;
@@ -247,6 +256,7 @@ export class BrowserHub extends EventEmitter<HubEvents> {
   }
 
   private recordError(code: string, action?: string): void {
+    this.opts.logger.warn('browser error', { code, action });
     this.recentErrors.push({ at: new Date().toISOString(), code, action });
     if (this.recentErrors.length > 50) this.recentErrors.shift();
   }
@@ -294,6 +304,40 @@ export class BrowserHub extends EventEmitter<HubEvents> {
 
   /** Send an action to a browser and await its result. */
   async call(action: string, args: unknown, opts: { browserId?: string; timeoutMs?: number; signal?: AbortSignal } = {}): Promise<unknown> {
+    const t0 = Date.now();
+    const browser = (() => {
+      try {
+        return this.resolvePeer(opts.browserId).id;
+      } catch {
+        return undefined;
+      }
+    })();
+    const tab = typeof (args as { tabId?: unknown } | undefined)?.tabId === 'number' ? (args as { tabId: number }).tabId : undefined;
+    let result: unknown;
+    try {
+      result = await this.callRaw(action, args, opts);
+    } catch (e) {
+      this.opts.logger.warn('action failed', { action, browser, tab, ms: Date.now() - t0, code: e instanceof BrowserForgeError ? e.code : 'INTERNAL', error: e instanceof BrowserForgeError ? e.message : 'unexpected error' });
+      throw e;
+    }
+    this.opts.logger.debug('action ok', { action, browser, tab, ms: Date.now() - t0 });
+    // The page may describe the elements it touched (for flow recording). Agents never see that; listeners do.
+    let flow: Record<string, unknown>[] | undefined;
+    if (result && typeof result === 'object' && '_flow' in result) {
+      flow = (result as { _flow?: Record<string, unknown>[] })._flow;
+      delete (result as { _flow?: unknown })._flow;
+    }
+    if (isActionName(action) && !ACTIONS[action].readOnly) {
+      try {
+        this.emit('actionDone', this.resolvePeer(opts.browserId).id, action, (args ?? {}) as Record<string, unknown>, result, flow);
+      } catch (e) {
+        this.opts.logger.warn('actionDone listener failed', { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    return result;
+  }
+
+  private async callRaw(action: string, args: unknown, opts: { browserId?: string; timeoutMs?: number; signal?: AbortSignal } = {}): Promise<unknown> {
     if (!isActionName(action)) throw new BrowserForgeError('INVALID_ARGUMENTS', `Unknown action '${action}'`);
     const parsed = ACTIONS[action].args.safeParse(args ?? {});
     if (!parsed.success) {

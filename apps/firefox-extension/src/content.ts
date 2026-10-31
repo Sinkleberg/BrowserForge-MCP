@@ -97,6 +97,13 @@ function labelFor(el: Element): string {
   return (el.getAttribute('placeholder') ?? el.getAttribute('title') ?? '').trim().slice(0, 120);
 }
 
+/** labelFor() of a <select> includes the text of every option; keep just the label. */
+function cleanLabelFor(el: Element): string {
+  let label = labelFor(el);
+  if (el instanceof HTMLSelectElement) for (const o of el.options) if (o.text.trim()) label = label.replace(o.text.trim(), '');
+  return label.replace(/\s+/g, ' ').trim();
+}
+
 function describe(el: Element) {
   const he = el as HTMLInputElement;
   const tag = el.tagName.toLowerCase();
@@ -149,6 +156,90 @@ function riskOfClick(target: Element): string | null {
   if (RISKY_WORDS.test(label) && (tag === 'button' || tag === 'input' || role === 'button' || role === 'menuitem' || role === 'link' || tag === 'a')) return `Click “${label.trim().slice(0, 60)}”`;
   if (tag === 'input' && type === 'checkbox' && /\b(terms|agree|accept|consent|contract)\b/i.test(labelFor(el))) return `Tick “${labelFor(el).slice(0, 60)}”`;
   return null;
+}
+
+// ---------- flow capture: describe the element an action used, so it can be replayed or exported later ----------
+const GENERATED_ID = /^(:r[0-9a-z]+:|_r_\w+_|[0-9a-f]{8,}|.*\d{4,}.*|(mui|rc|react|radix|headlessui)[-_:].*)$/i;
+
+function implicitRole(el: Element): string | undefined {
+  const tag = el.tagName.toLowerCase();
+  const type = ((el as HTMLInputElement).type ?? '').toLowerCase();
+  if (tag === 'button') return 'button';
+  if (tag === 'a' && el.hasAttribute('href')) return 'link';
+  if (tag === 'select') return 'combobox';
+  if (tag === 'textarea') return 'textbox';
+  if (tag === 'input') {
+    if (['button', 'submit', 'reset', 'image'].includes(type)) return 'button';
+    if (type === 'checkbox') return 'checkbox';
+    if (type === 'radio') return 'radio';
+    if (type === 'range') return 'slider';
+    if (type === 'search') return 'searchbox';
+    return 'textbox';
+  }
+  if (/^h[1-6]$/.test(tag)) return 'heading';
+  return undefined;
+}
+
+function cssPath(el: Element): string {
+  const parts: string[] = [];
+  let cur: Element | null = el;
+  for (let depth = 0; cur && cur.nodeType === 1 && depth < 9; depth++) {
+    if (cur.id && !GENERATED_ID.test(cur.id)) {
+      parts.unshift(`#${CSS.escape(cur.id)}`);
+      break;
+    }
+    const tag = cur.tagName.toLowerCase();
+    if (tag === 'html') { parts.unshift('html'); break; }
+    const same = cur.parentElement ? [...cur.parentElement.children].filter((c) => c.tagName === cur!.tagName) : [];
+    parts.unshift(same.length > 1 ? `${tag}:nth-of-type(${same.indexOf(cur) + 1})` : tag);
+    cur = cur.parentElement;
+  }
+  return parts.join(' > ');
+}
+
+function xpathOf(el: Element): string {
+  if (el.id && !GENERATED_ID.test(el.id) && document.querySelectorAll(`[id="${CSS.escape(el.id)}"]`).length === 1) return `//*[@id="${el.id}"]`;
+  const parts: string[] = [];
+  let cur: Element | null = el;
+  while (cur && cur.nodeType === 1) {
+    const tag = cur.tagName.toLowerCase();
+    const same = cur.parentElement ? [...cur.parentElement.children].filter((c) => c.tagName === cur!.tagName) : [];
+    parts.unshift(same.length > 1 ? `${tag}[${same.indexOf(cur) + 1}]` : tag);
+    cur = cur.parentElement;
+  }
+  return '/' + parts.join('/');
+}
+
+/** Every strategy that finds this element, best first (see packages/flows). Pure data: no secrets, no field values. */
+function computeLocator(el: Element): Json {
+  const he = el as HTMLInputElement;
+  const tag = el.tagName.toLowerCase();
+  const loc: Json = { tag };
+  const testId = el.getAttribute('data-testid') ?? el.getAttribute('data-test') ?? el.getAttribute('data-qa') ?? el.getAttribute('data-cy');
+  if (testId) loc.testId = testId;
+  const role = el.getAttribute('role') ?? implicitRole(el);
+  const text = textOf(el, 60);
+  const label = cleanLabelFor(el);
+  const name = label || (['button', 'a', 'summary'].includes(tag) || role === 'button' || role === 'link' || role === 'option' ? text : '');
+  if (role && name) { loc.role = role; loc.name = name.slice(0, 80); }
+  if (label && (['input', 'select', 'textarea'].includes(tag) || isEditable(el))) loc.label = label.slice(0, 80);
+  if (he.placeholder) loc.placeholder = he.placeholder.slice(0, 80);
+  if (el.id && !GENERATED_ID.test(el.id)) loc.id = el.id;
+  if (he.name && ['input', 'select', 'textarea', 'button'].includes(tag)) loc.nameAttr = he.name;
+  if (text && ['button', 'a', 'summary', 'span', 'div', 'li'].includes(tag) && text.length <= 40) loc.text = text;
+  loc.css = cssPath(el);
+  loc.xpath = xpathOf(el);
+  return loc;
+}
+
+let flowParts: Json[] = [];
+/** Record what an action touched; the message handler attaches it to the reply as `_flow` (the server strips it before the agent sees it). */
+function capture(el: Element, extra: Json = {}): void {
+  try {
+    flowParts.push({ url: location.href, ...(window !== window.top ? { frameUrl: location.href } : {}), locator: computeLocator(el), fieldLabel: cleanLabelFor(el) || undefined, ...extra });
+  } catch {
+    /* recording must never break an action */
+  }
 }
 
 // ---------- input helpers ----------
@@ -351,6 +442,35 @@ function describeForm(form: HTMLFormElement | null, scope: Element, idx: number)
   };
 }
 
+/**
+ * File boxes are often hidden (display:none behind a styled drop zone) and unlabeled, so the label/name/id lookup that works
+ * for text fields misses them. Try, in order: an element ref, the usual field match, a CSS selector, the text around each file box
+ * ("Carica il tuo CV", the accept types), and finally the only file box on the page. Searches the whole document, since upload
+ * popups usually live outside the <form>.
+ */
+function findFileInput(scope: Element, key: string): HTMLInputElement | null {
+  const isFile = (e: unknown): e is HTMLInputElement => e instanceof HTMLInputElement && e.type === 'file' && !e.disabled;
+  if (key.startsWith(EPOCH + ':')) {
+    const el = refs.get(key)?.deref();
+    if (isFile(el)) return el;
+  }
+  const byField = findField(scope, key);
+  if (isFile(byField)) return byField;
+  try {
+    const bySel = document.querySelector(key);
+    if (isFile(bySel)) return bySel;
+  } catch {
+    /* not a selector */
+  }
+  const all = [...document.querySelectorAll('input[type=file]')].filter(isFile);
+  const words = key.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 2);
+  const context = (e: HTMLInputElement) =>
+    `${labelFor(e)} ${e.name} ${e.id} ${e.accept} ${e.getAttribute('aria-label') ?? ''} ${textOf(e.closest('label,[role=dialog],[class*=drop],[class*=upload],section,form,div') ?? e, 200)}`.toLowerCase();
+  const scored = all.map((e) => ({ e, s: words.filter((w) => context(e).includes(w)).length })).sort((a, b) => b.s - a.s);
+  if (scored[0] && scored[0].s > 0 && scored[0].s > (scored[1]?.s ?? 0)) return scored[0].e;
+  return all.length === 1 ? all[0]! : null;
+}
+
 function findField(scope: Element, key: string): Element | null {
   const k = key.trim().toLowerCase();
   const all = [...scope.querySelectorAll('input,select,textarea')].filter((e) => !(e instanceof HTMLInputElement && ['hidden', 'submit', 'button'].includes(e.type)));
@@ -411,6 +531,87 @@ function snapshot(root: Element, maxNodes: number): Json {
 }
 
 // ---------- operations ----------
+/** One "n | kind | label | ref" line of the interactive_elements table (state says whether a field holds something, never what). */
+function tableRow(e: Element, i: number, withRef = true): string {
+  const he = e as HTMLInputElement;
+  const kind = e.getAttribute('role') || (e.tagName === 'INPUT' ? `input:${he.type || 'text'}` : e.tagName.toLowerCase());
+  let label = labelFor(e) || textOf(e, 60) || (he.value && he.type !== 'password' ? String(he.value).slice(0, 40) : '') || (e instanceof HTMLAnchorElement ? new URL(e.href, location.href).pathname.slice(0, 40) : '');
+  // A <select>'s label text includes every option; drop them so the row stays short.
+  if (e instanceof HTMLSelectElement) for (const o of e.options) if (o.text.trim()) label = label.replace(o.text.trim(), '');
+  label = label.replace(/\s+/g, ' ').replace(/\|/g, '/').trim().slice(0, 60);
+  // Whether a field already holds something, never what it holds: lets the agent see progress without exposing values.
+  let state = '';
+  if (e instanceof HTMLInputElement && ['checkbox', 'radio'].includes(e.type)) state = e.checked ? ' [checked]' : ' [unchecked]';
+  else if (e instanceof HTMLSelectElement) state = e.value ? ' [filled]' : ' [empty]';
+  else if ((e instanceof HTMLInputElement && !['button', 'submit', 'reset', 'image', 'file', 'hidden'].includes(e.type)) || e instanceof HTMLTextAreaElement) state = he.value ? ' [filled]' : ' [empty]';
+  else if (isEditable(e)) state = textOf(e, 1) ? ' [filled]' : ' [empty]';
+  return `${i + 1} | ${kind}${he.disabled ? ' (disabled)' : ''}${isEditable(e) ? ' (editable)' : ''}${state} | ${label}${withRef ? ` | ${refFor(e)}` : ''}`;
+}
+
+// ---------- data tables ----------
+const TABLE_LIKE = 'table,[role=table],[role=grid],[role=treegrid]';
+const cellText = (c: Element): string => ((c as HTMLElement).innerText ?? c.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
+const spanOf = (c: Element, html: string, aria: string): number => Math.max(1, Math.min(100, Number(c.getAttribute(html) ?? c.getAttribute(aria) ?? 1) || 1));
+
+/**
+ * One table as a grid of text. Merged cells are expanded (the merged value is repeated in every cell it covers) and reported in `merges`,
+ * so a column never shifts. The first header row, if there is one, gives the column names.
+ */
+function extractTable(el: Element, index: number, maxRows: number, withLinks: boolean): Json {
+  const html = el instanceof HTMLTableElement;
+  const rowEls = html ? [...(el as HTMLTableElement).rows] : [...el.querySelectorAll('[role=row]')];
+  const cellsOf = (r: Element): Element[] => (html ? [...(r as HTMLTableRowElement).cells] : [...r.querySelectorAll('[role=cell],[role=gridcell],[role=columnheader],[role=rowheader]')]);
+  const isHeaderRow = (r: Element, cells: Element[]): boolean =>
+    cells.length > 0 && (cells.every((c) => c.tagName === 'TH' || c.getAttribute('role') === 'columnheader') || (html && r.parentElement?.tagName === 'THEAD'));
+
+  type Cell = { text: string; href: string | null };
+  const placed = new Map<string, Cell>();
+  const merges: { row: number; col: number; rowSpan: number; colSpan: number }[] = [];
+  const limit = Math.min(rowEls.length, maxRows + 3);
+  let width = 0;
+  let headerAt = -1;
+  for (let r = 0; r < limit; r++) {
+    const cells = cellsOf(rowEls[r]!);
+    if (headerAt < 0 && r < 3 && isHeaderRow(rowEls[r]!, cells)) headerAt = r;
+    let c = 0;
+    for (const cell of cells) {
+      while (placed.has(`${r},${c}`)) c++;
+      const cs = spanOf(cell, 'colspan', 'aria-colspan');
+      const rs = spanOf(cell, 'rowspan', 'aria-rowspan');
+      const a = cell.querySelector('a[href]') as HTMLAnchorElement | null;
+      const value: Cell = { text: cellText(cell), href: withLinks && a ? a.href.slice(0, 1000) : null };
+      for (let dr = 0; dr < rs; dr++) for (let dc = 0; dc < cs; dc++) placed.set(`${r + dr},${c + dc}`, value);
+      if (cs > 1 || rs > 1) merges.push({ row: r, col: c, rowSpan: rs, colSpan: cs });
+      c += cs;
+      width = Math.max(width, c);
+    }
+  }
+  width = Math.min(width, 60);
+  const grid = (r: number): Cell[] => Array.from({ length: width }, (_v, c) => placed.get(`${r},${c}`) ?? { text: '', href: null });
+  const used = new Set<string>();
+  const headers: string[] | null = headerAt >= 0
+    ? grid(headerAt).map((cell, i) => {
+        let name = cell.text || `column_${i + 1}`;
+        for (let n = 2; used.has(name); n++) name = `${cell.text || `column_${i + 1}`} (${n})`;
+        used.add(name);
+        return name;
+      })
+    : null;
+  const bodyIdx: number[] = [];
+  for (let r = 0; r < limit; r++) if (r !== headerAt) bodyIdx.push(r);
+  const body = bodyIdx.slice(0, maxRows);
+  const totalRows = Math.max(0, rowEls.length - (headerAt >= 0 ? 1 : 0));
+  const caption = (el instanceof HTMLTableElement && el.caption ? cellText(el.caption) : '') || el.getAttribute('aria-label') || '';
+  return {
+    index, kind: html ? 'table' : 'grid', caption: caption.slice(0, 200), headers, columns: width,
+    rows: body.map((r) => grid(r).map((x) => x.text)),
+    ...(withLinks ? { links: body.map((r) => grid(r).map((x) => x.href)) } : {}),
+    merges: merges.filter((m) => m.row !== headerAt).slice(0, 200),
+    totalRows, truncated: totalRows > body.length,
+  };
+}
+
+
 const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | unknown> = {
   ping: () => ({ epoch: EPOCH, url: location.href }),
 
@@ -418,6 +619,20 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
     const max = Math.min(Number(args.maxChars ?? 50_000), 200_000);
     const text = (document.body?.innerText ?? '').replace(/\n{3,}/g, '\n\n');
     return { url: location.href, title: document.title, text: text.slice(0, max), truncated: text.length > max, totalChars: text.length };
+  },
+
+  tables: (args) => {
+    const max = Math.min(Number(args.maxRows ?? 500), 5000);
+    const sel = typeof args.selector === 'string' && args.selector ? args.selector : null;
+    let els: Element[];
+    try {
+      els = sel ? [...document.querySelectorAll(sel)].flatMap((e) => (e.matches(TABLE_LIKE) ? [e] : [...e.querySelectorAll(TABLE_LIKE)])) : [...document.querySelectorAll(TABLE_LIKE)];
+    } catch {
+      throw new CallError('INVALID_ARGUMENTS', 'Invalid selector');
+    }
+    // Skip hidden ones and layout tables (a single row or a single column of cells carries no data).
+    const tables = els.filter(isVisible).map((e, i) => extractTable(e, i, max, args.includeLinks === true)).filter((t) => sel || ((t.totalRows as number) >= 1 && (t.columns as number) >= 2));
+    return { url: location.href, title: document.title, epoch: EPOCH, tables: tables.map((t, i) => ({ ...t, index: i })) };
   },
 
   dom_snapshot: (args) => {
@@ -432,27 +647,17 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
     const limit = Math.min(Number(args.limit ?? (table ? 100 : 300)), 1000);
     const inView = (e: Element) => { const r = (e as HTMLElement).getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth; };
     let els = [...document.querySelectorAll(INTERACTIVE)].filter((e) => !(e instanceof HTMLInputElement && e.type === 'hidden'));
-    if (args.visibleOnly !== false) els = els.filter(isVisible);
+    // Hidden file inputs stay listed: they are how uploads work behind styled drop zones.
+    if (args.visibleOnly !== false) els = els.filter((e) => isVisible(e) || (e instanceof HTMLInputElement && e.type === 'file'));
     if (args.inViewport === true) els = els.filter(inView);
     else if (table) els = [...els.filter(inView), ...els.filter((e) => !inView(e))]; // on-screen controls first
     const base = { url: location.href, title: document.title, epoch: EPOCH, total: els.length, truncated: els.length > limit };
     if (!table) return { ...base, elements: els.slice(0, limit).map(describe) };
-    const rows = els.slice(0, limit).map((e, i) => {
-      const he = e as HTMLInputElement;
-      const kind = e.getAttribute('role') || (e.tagName === 'INPUT' ? `input:${he.type || 'text'}` : e.tagName.toLowerCase());
-      let label = labelFor(e) || textOf(e, 60) || (he.value && he.type !== 'password' ? String(he.value).slice(0, 40) : '') || (e instanceof HTMLAnchorElement ? new URL(e.href, location.href).pathname.slice(0, 40) : '');
-      // A <select>'s label text includes every option; drop them so the row stays short.
-      if (e instanceof HTMLSelectElement) for (const o of e.options) if (o.text.trim()) label = label.replace(o.text.trim(), '');
-      label = label.replace(/\s+/g, ' ').replace(/\|/g, '/').trim().slice(0, 60);
-      // Whether a field already holds something, never what it holds: lets the agent see progress without exposing values.
-      let state = '';
-      if (e instanceof HTMLInputElement && ['checkbox', 'radio'].includes(e.type)) state = e.checked ? ' [checked]' : ' [unchecked]';
-      else if (e instanceof HTMLSelectElement) state = e.value ? ' [filled]' : ' [empty]';
-      else if ((e instanceof HTMLInputElement && !['button', 'submit', 'reset', 'image', 'file', 'hidden'].includes(e.type)) || e instanceof HTMLTextAreaElement) state = he.value ? ' [filled]' : ' [empty]';
-      else if (isEditable(e)) state = textOf(e, 1) ? ' [filled]' : ' [empty]';
-      return `${i + 1} | ${kind}${he.disabled ? ' (disabled)' : ''}${isEditable(e) ? ' (editable)' : ''}${state} | ${label} | ${refFor(e)}`;
-    });
-    return { ...base, rows };
+    const rows = els.slice(0, limit).map((e, i) => tableRow(e, i));
+    // Confirmation / error cues that are not controls ("Thanks, your account was created"), so the agent can tell when it is done.
+    const notes = [...document.querySelectorAll('h1,h2,h3,[role=alert],[role=status],[aria-live],[class*=success],[class*=error],[class*=alert]')]
+      .filter(isVisible).map((e) => textOf(e, 90)).filter(Boolean).filter((t, i, a) => a.indexOf(t) === i).slice(0, 6);
+    return { ...base, rows, notes };
   },
 
   forms: () => {
@@ -475,6 +680,7 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
     if (el instanceof HTMLElement && (isEditable(el) || el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) (editableHost(el) ?? el).focus();
     if (['option', 'combobox', 'menuitem'].includes(el.getAttribute('role') ?? '')) pointerClick(el);
     else (el as HTMLElement).click();
+    capture(el, { consequential: Boolean(risk) });
     return { clicked: true, element: describe(el) };
   },
 
@@ -488,6 +694,7 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
       const t = String(args.text ?? '');
       await typeIntoEditable(host, t, args.clear === true);
       if (args.submit) await enterInEditable(host, false);
+      capture(host, { consequential: args.submit === true });
       return { typed: t.length, editable: true, text: editorText(host).slice(0, 200) };
     }
     assertFillable(el);
@@ -508,6 +715,7 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
     }
     fire(el, 'change');
     if (args.submit) await pressEnter(el);
+    capture(el, { sensitive: isPassword(el), consequential: isPassword(el) || args.submit === true });
     return { typed: text.length };
   },
 
@@ -516,11 +724,13 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
     const host = editableHost(el);
     if (host) {
       await typeIntoEditable(host, String(args.value ?? ''), true);
+      capture(host);
       return { filled: true, element: describe(host) };
     }
     assertFillable(el);
     if (isPassword(el) && !approved) throw Object.assign(new CallError('APPROVAL_REQUIRED', 'Fill a password field'), { risk: 'Fill a password field' });
     fillElement(el, String(args.value ?? ''));
+    capture(el, { sensitive: isPassword(el), consequential: isPassword(el) });
     return { filled: true, element: describe(el) };
   },
 
@@ -542,6 +752,7 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
       const hit = opts.find((o) => textOf(o, 80).toLowerCase() === want || o.getAttribute('data-value')?.toLowerCase() === want || o.getAttribute('aria-label')?.toLowerCase() === want);
       if (!hit) throw new CallError('ELEMENT_NOT_FOUND', 'Option not found in the opened dropdown', { available: opts.slice(0, 50).map((o) => textOf(o, 60)) });
       pointerClick(hit);
+      capture(el, { custom: true });
       return { selected: textOf(hit, 60), custom: true };
     }
     if (!(el instanceof HTMLSelectElement)) throw new CallError('INVALID_ARGUMENTS', 'Target is not a <select> or combobox');
@@ -549,6 +760,7 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
     if (!opt) throw new CallError('ELEMENT_NOT_FOUND', 'Option not found', { available: [...el.options].slice(0, 50).map((o) => o.text.trim()) });
     el.value = opt.value;
     fire(el, 'input', 'change');
+    capture(el);
     return { selected: opt.value, label: opt.text.trim() };
   },
 
@@ -583,6 +795,7 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
     }
     if (key === 'Enter' && edHost) {
       await enterInEditable(edHost, mods.includes('Shift'));
+      capture(edHost, { consequential: key === 'Enter' && !mods.includes('Shift') });
       return { pressed: key };
     }
     const init = { key, bubbles: true, cancelable: true, ctrlKey: mods.includes('Control'), shiftKey: mods.includes('Shift'), altKey: mods.includes('Alt'), metaKey: mods.includes('Meta') };
@@ -591,6 +804,7 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
     if (key === 'Enter') await pressEnterDefault(el);
     else if (key === 'Tab') focusNext(el, mods.includes('Shift'));
     el.dispatchEvent(new KeyboardEvent('keyup', init));
+    if (el !== document.body) capture(el, { consequential: key === 'Enter' && Boolean(el.closest('form')) });
     return { pressed: key };
   },
 
@@ -630,6 +844,15 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
   fill_form: async (args, approved) => {
     const files = (args.files as { key: string; fileName: string; mimeType: string; base64: string }[] | undefined) ?? [];
     const submit = args.submit === true;
+    // Don't ask the human to approve an upload that cannot happen: check every file box exists first.
+    const missingBoxes = files.filter((f) => !findFileInput(document.body, f.key));
+    if (missingBoxes.length && !approved) {
+      const count = document.querySelectorAll('input[type=file]').length;
+      return {
+        filled: [], submitted: false, requiredMissing: [],
+        notFound: missingBoxes.map((f) => `${f.key} (no file input${count ? `: ${count} on the page, none matched; pass the ref from browser_get_interactive_elements` : ' on the page yet; open the upload dialog first, without clicking the button that opens the system file picker'})`),
+      };
+    }
     if ((files.length || submit) && !approved) {
       const parts: string[] = [];
       if (files.length) parts.push(`attach ${files.map((f) => f.fileName).join(', ')}`);
@@ -654,20 +877,26 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
       if (isPassword(el) && !approved) { notFound.push(`${f.key} (password fields need approval)`); continue; }
       try {
         fillElement(el, f.value);
+        capture(el, { kind: 'fill', sensitive: isPassword(el), consequential: isPassword(el), value: isPassword(el) ? undefined : f.value });
         filled.push({ key: f.key, matched: labelFor(el) || (el as HTMLInputElement).name || el.id });
       } catch (e) {
         notFound.push(`${f.key} (${(e as Error).message})`);
       }
     }
     for (const file of files) {
-      const el = findField(scope, file.key);
-      if (!(el instanceof HTMLInputElement) || el.type !== 'file') { notFound.push(`${file.key} (no file input)`); continue; }
+      const el = findFileInput(scope, file.key);
+      if (!el) {
+        const count = document.querySelectorAll('input[type=file]').length;
+        notFound.push(`${file.key} (no file input${count ? `: ${count} on the page, none matched; pass the ref from browser_get_interactive_elements` : ' on the page yet; open the upload dialog first, without clicking the button that opens the system file picker'})`);
+        continue;
+      }
       const bytes = Uint8Array.from(atob(file.base64), (c) => c.charCodeAt(0));
       const dt = new DataTransfer();
       dt.items.add(new File([bytes], file.fileName, { type: file.mimeType }));
       el.files = dt.files;
       fire(el, 'input', 'change');
-      filled.push({ key: file.key, matched: labelFor(el) || el.name, file: file.fileName });
+      capture(el, { kind: 'upload', consequential: true, value: file.fileName });
+      filled.push({ key: file.key, matched: labelFor(el) || el.name || el.id || 'file input', file: file.fileName, accepted: el.files?.length === 1 });
     }
     const report = form ? (describeForm(form, form, 0) as { requiredMissing: unknown[] }) : null;
     let submitted = false;
@@ -678,6 +907,7 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
           return { filled, notFound, submitted: false, requiredMissing: report?.requiredMissing, reason: 'Form validation failed; fix the invalid fields' };
         }
         const btn = form.querySelector<HTMLElement>('button[type=submit],input[type=submit],button:not([type])');
+        if (btn) capture(btn, { kind: 'click', consequential: true });
         if (btn) btn.click();
         else form.requestSubmit();
         submitted = true;
@@ -694,6 +924,30 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
   },
 
   page_metrics: () => ({ width: window.innerWidth, height: window.innerHeight, scrollHeight: document.documentElement.scrollHeight, scrollY: window.scrollY, dpr: window.devicePixelRatio }),
+  /** Find an element from a recorded flow: try each strategy in order, accept the first that matches exactly one visible element, else the first match. */
+  resolve_locator: (args) => {
+    const loc = (args.locator ?? {}) as Json;
+    const byText = (sel: string, text: string, exact = true) => [...document.querySelectorAll(sel)].filter((e) => (exact ? textOf(e, 200) === text : textOf(e, 200).includes(text)));
+    const tries: [string, () => Element[]][] = [];
+    if (loc.testId) tries.push(['testId', () => [...document.querySelectorAll(`[data-testid=${JSON.stringify(loc.testId)}],[data-test=${JSON.stringify(loc.testId)}],[data-qa=${JSON.stringify(loc.testId)}]`)]]);
+    if (loc.role && loc.name) tries.push(['role', () => [...document.querySelectorAll(INTERACTIVE)].filter((e) => (e.getAttribute('role') ?? implicitRole(e)) === loc.role && (labelFor(e) === loc.name || textOf(e, 80) === loc.name))]);
+    if (loc.label) tries.push(['label', () => [...document.querySelectorAll('input,select,textarea,[contenteditable],[role=textbox],[role=combobox]')].filter((e) => cleanLabelFor(e) === loc.label)]);
+    if (loc.placeholder) tries.push(['placeholder', () => [...document.querySelectorAll(`[placeholder=${JSON.stringify(loc.placeholder)}]`)]]);
+    if (loc.id) tries.push(['id', () => [...document.querySelectorAll(`[id=${JSON.stringify(loc.id)}]`)]]);
+    if (loc.nameAttr) tries.push(['name', () => [...document.querySelectorAll(`[name=${JSON.stringify(loc.nameAttr)}]`)]]);
+    if (loc.text) tries.push(['text', () => byText('button,a,summary,span,div,li', String(loc.text))]);
+    if (loc.css) tries.push(['css', () => { try { return [...document.querySelectorAll(String(loc.css))]; } catch { return []; } }]);
+    if (loc.xpath) tries.push(['xpath', () => { try { const r = document.evaluate(String(loc.xpath), document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); return Array.from({ length: r.snapshotLength }, (_, i) => r.snapshotItem(i) as Element); } catch { return []; } }]);
+    let fallback: { how: string; el: Element } | null = null;
+    for (const [how, find] of tries) {
+      const hits = find();
+      if (hits.length === 1) return { ref: refFor(hits[0]!), how, element: describe(hits[0]!) };
+      if (hits.length > 1 && !fallback) fallback = { how, el: hits.find(isVisible) ?? hits[0]! };
+    }
+    if (fallback) return { ref: refFor(fallback.el), how: `${fallback.how} (first of several)`, element: describe(fallback.el) };
+    throw new CallError('ELEMENT_NOT_FOUND', 'No strategy in the recorded locator matches an element on this page');
+  },
+
   scroll_to: (args) => { window.scrollTo(0, Number(args.y ?? 0)); return { scrollY: window.scrollY }; },
 };
 
@@ -713,6 +967,121 @@ function focusNext(el: Element, back: boolean): void {
   next?.focus();
 }
 
+// ---------- "Record me": the person's own clicks and fields, relayed to the background (only while the popup switch is on) ----------
+// Only trusted events count (a real click or keystroke), so BrowserForge's own synthetic actions are never recorded as the person's.
+// Values stay in the page: a typed value is sent only when the person turned on "Store my values", and never for password-like fields.
+const SENSITIVE_FIELD = /\b(pass(word|wd)?|pwd|cvv|cvc|iban|ssn|otp|token|secret|pin)\b|cc-|one-time|security.?code|(credit|debit).?card|card.?(number|no)\b/i;
+function isSensitiveField(el: Element): boolean {
+  if (isPassword(el)) return true;
+  const he = el as HTMLInputElement;
+  if (/^(cc-|one-time-code|current-password|new-password)/.test(el.getAttribute('autocomplete') ?? '')) return true;
+  return SENSITIVE_FIELD.test(`${he.name ?? ''} ${el.id} ${he.placeholder ?? ''} ${labelFor(el)}`);
+}
+
+const rec = { on: false, values: false };
+let snap: { at: number; els: Element[]; rows: string[] } | null = null;
+const baseline = new WeakMap<Element, string>();
+
+/** The controls on screen as the agent would see them (on-screen ones first), with refs left out. */
+function takeSnapshot(): void {
+  try {
+    const inView = (e: Element) => { const r = (e as HTMLElement).getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth; };
+    const all = [...document.querySelectorAll(INTERACTIVE)].filter((e) => !(e instanceof HTMLInputElement && e.type === 'hidden') && (isVisible(e) || (e instanceof HTMLInputElement && e.type === 'file')));
+    const els = [...all.filter(inView), ...all.filter((e) => !inView(e))].slice(0, 100);
+    snap = { at: Date.now(), els, rows: els.map((e, i) => tableRow(e, i, false).slice(0, 190)) };
+  } catch {
+    snap = null;
+  }
+}
+
+const isTextField = (el: Element): boolean =>
+  el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && !['checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'file', 'hidden', 'range', 'color'].includes(el.type));
+const fieldValue = (el: Element): string => (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement ? el.value : textOf(el, 2000));
+
+function stringsOnly(loc: Json): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(loc)) if (typeof v === 'string' && v) out[k] = v.slice(0, 600);
+  return out;
+}
+
+function relay(kind: 'click' | 'fill' | 'select' | 'press' | 'upload', el: Element, extra: Json = {}): void {
+  try {
+    const sensitive = isSensitiveField(el);
+    const idx = snap && Date.now() - snap.at < 15_000 ? snap.els.indexOf(el) : -1;
+    const data: Json = {
+      kind, url: location.href, ...(window !== window.top ? { frameUrl: location.href } : {}),
+      locator: stringsOnly(computeLocator(el)), fieldLabel: cleanLabelFor(el).slice(0, 120) || undefined,
+      ...(sensitive ? { sensitive: true } : {}),
+      ...(idx >= 0 && snap ? { row: idx + 1, table: snap.rows } : {}),
+      ...extra,
+    };
+    if (sensitive || !rec.values || kind === 'upload') delete data.value;
+    void Promise.resolve(api.runtime.sendMessage({ kind: 'bf-human', data })).catch(() => undefined); // the extension may have been reloaded
+  } catch {
+    /* recording must never break the page */
+  }
+}
+
+/** Send the field's text if it changed since the person started (or last sent it). */
+function flushField(el: Element): void {
+  const now = fieldValue(el);
+  if (now === (baseline.get(el) ?? '')) return;
+  baseline.set(el, now);
+  if (el instanceof HTMLSelectElement) relay('select', el, { value: el.selectedOptions[0]?.text.trim() ?? now });
+  else relay('fill', el, { value: now });
+}
+
+function applyRecord(v: unknown): void {
+  const r = (v ?? {}) as { on?: boolean; values?: boolean };
+  rec.on = r.on === true && !api.extension?.inIncognitoContext;
+  rec.values = r.values === true;
+  if (!rec.on) snap = null;
+}
+
+function startRecorder(): void {
+  const trusted = (e: Event) => rec.on && e.isTrusted;
+  const controlOf = (t: EventTarget | null): Element | null => (t instanceof Element ? t.closest(INTERACTIVE) : null);
+  document.addEventListener('pointerdown', (e) => { if (trusted(e)) takeSnapshot(); }, true);
+  document.addEventListener('focusin', (e) => {
+    if (!trusted(e) || !(e.target instanceof Element)) return;
+    takeSnapshot();
+    if (isTextField(e.target) || e.target instanceof HTMLSelectElement || isEditable(e.target)) baseline.set(e.target, fieldValue(e.target));
+  }, true);
+  document.addEventListener('click', (e) => {
+    if (!trusted(e)) return;
+    const el = controlOf(e.target);
+    if (!el || isTextField(el) || el instanceof HTMLSelectElement || isEditable(el) || el.tagName === 'OPTION' || (el instanceof HTMLInputElement && el.type === 'file')) return; // fields are recorded by what they end up holding
+    if (!snap || Date.now() - snap.at > 15_000) takeSnapshot(); // a click made with the keyboard has no pointerdown
+    relay('click', el, { consequential: riskOfClick(el) !== null });
+  }, true);
+  document.addEventListener('change', (e) => {
+    if (!trusted(e) || !(e.target instanceof Element)) return;
+    const el = e.target;
+    if (el instanceof HTMLInputElement && el.type === 'file') relay('upload', el, { consequential: true });
+    else if (isTextField(el) || el instanceof HTMLSelectElement) flushField(el);
+  }, true);
+  document.addEventListener('focusout', (e) => {
+    if (trusted(e) && e.target instanceof Element && isEditable(e.target) && !isTextField(e.target)) flushField(e.target); // rich-text boxes have no change event
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (!trusted(e) || e.key !== 'Enter' || e.isComposing || !(e.target instanceof HTMLInputElement) || !isTextField(e.target)) return;
+    flushField(e.target); // the text first, then the Enter that sends it
+    const f = e.target.form;
+    relay('press', e.target, { key: 'Enter', consequential: Boolean(f && f.querySelector('button:not([type=button]):not([type=reset]),input[type=submit],input[type=image]')) });
+  }, true);
+  try {
+    void Promise.resolve(api.storage.local.get('record')).then((r: { record?: unknown }) => applyRecord(r?.record)).catch(() => undefined);
+    api.storage.onChanged.addListener((ch: Record<string, { newValue?: unknown }>, area: string) => { if (area === 'local' && ch.record) applyRecord(ch.record.newValue); });
+  } catch {
+    /* storage unavailable: recording stays off */
+  }
+}
+
+// The background injects this script on demand into frames; a second injection into the same frame must not add a second listener.
+const g = globalThis as unknown as { __bfContentLoaded?: boolean };
+if (!g.__bfContentLoaded) {
+g.__bfContentLoaded = true;
+startRecorder();
 api.runtime.onMessage.addListener(((msg: ContentCall, _sender: unknown, sendResponse: (r: ContentReply) => void) => {
   if (!msg || msg.kind !== 'bf-call') return false;
   const op = ops[msg.op];
@@ -720,9 +1089,13 @@ api.runtime.onMessage.addListener(((msg: ContentCall, _sender: unknown, sendResp
     sendResponse({ ok: false, error: { code: 'UNSUPPORTED', message: `Unknown operation ${msg.op}` } });
     return false;
   }
+  flowParts = [];
   Promise.resolve()
     .then(() => op(msg.args ?? {}, msg.approved === true))
-    .then((result) => sendResponse({ ok: true, result }))
+    .then((result) => {
+      if (flowParts.length && result && typeof result === 'object') (result as Json)._flow = flowParts;
+      sendResponse({ ok: true, result });
+    })
     .catch((e: unknown) => {
       if (e instanceof CallError && e.code === 'APPROVAL_REQUIRED') {
         sendResponse({ ok: false, needsApproval: { title: e.message, detail: String((e as unknown as { risk?: string }).risk ?? e.message) } });
@@ -733,3 +1106,4 @@ api.runtime.onMessage.addListener(((msg: ContentCall, _sender: unknown, sendResp
     });
   return true; // async response
 }) as never);
+}

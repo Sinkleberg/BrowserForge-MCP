@@ -1,0 +1,64 @@
+{
+  "name": "browserforge-plugin-rendercv",
+  "version": "0.1.0",
+  "description": "Tailor a RenderCV resume to each job without inventing anything, render it to PDF, and keep a log of where you applied.",
+  "type": "module",
+  "main": "index.js",
+  "keywords": [
+    "browserforge-plugin",
+    "rendercv",
+    "cv",
+    "resume",
+    "job-application"
+  ],
+  "license": "MIT",
+  "browserforge": {
+    "id": "rendercv",
+    "toolPrefix": "cv",
+    "description": "Tailor RenderCV resumes per job (reorder and reword only, no invented facts), render PDFs into the upload folder, and track applications (no duplicates, daily limit).",
+    "instructions": "cv_* tools: cv_get to read the master CV, cv_tailor to make a per-job copy (it rejects any number, date, link or term that is not already in the master CV), cv_render for the PDF to upload, cv_applications check/add around every application.",
+    "settings": {
+      "cvDir": {
+        "type": "path",
+        "description": "Folder with your master RenderCV YAML files (searched two levels deep)",
+        "required": true
+      },
+      "rendercv": {
+        "type": "path",
+        "description": "Path to the rendercv program (e.g. .../venv/bin/rendercv)",
+        "required": true
+      },
+      "maxPages": {
+        "type": "number",
+        "description": "Reject a rendered CV longer than this many pages",
+        "default": 2
+      },
+      "dailyLimit": {
+        "type": "number",
+        "description": "Most submitted applications per day cv_applications will allow",
+        "default": 10
+      }
+    },
+    "permissions": {
+      "files": {
+        "read": [
+          "setting:cvDir",
+          "uploads/cv",
+          "data"
+        ],
+        "write": [
+          "setting:cvDir/tailored",
+          "uploads/cv",
+          "data"
+        ]
+      },
+      "exec": [
+        "setting:rendercv"
+      ]
+    }
+  },
+  "dependencies": {
+    "@browserforge/plugin-sdk": "*",
+    "yaml": "^2.9.1"
+  }
+}

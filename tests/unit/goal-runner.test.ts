@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { BrowserForgeError } from '@browserforge/shared';
 import { DocStore, TraceStore } from '@browserforge/knowledge';
-import { buildUserPrompt, decisionSchema, parseRows, runGoal, type GoalDeps, type Decision } from '../../apps/mcp-server/src/goal-runner.js';
+import { buildUserPrompt, decisionSchema, parseRows, qwenPrompt, runGoal, type GoalDeps, type Decision } from '../../apps/mcp-server/src/goal-runner.js';
 import { assertLoopbackUrl } from '../../apps/mcp-server/src/context.js';
 
 let dir: string;
@@ -28,7 +28,7 @@ function harness(decisions: Partial<Decision>[], opts: { afterAction?: () => str
       if (opts.afterAction) rows = opts.afterAction();
       return {};
     },
-    decide: async (_s, user, schema) => { prompts.push(user); schemas.push(schema); const d = decisions[Math.min(i++, decisions.length - 1)]!; return { op: 'DONE', target: null, inputKey: null, confidence: 0.95, ...d }; },
+    decide: async (req) => { prompts.push(qwenPrompt(req)); schemas.push(decisionSchema(req.obs.rows.length, req.inputKeys)); const d = decisions[Math.min(i++, decisions.length - 1)]!; return { raw: { op: 'DONE', target: null, inputKey: null, confidence: 0.95, ...d }, source: 'qwen' }; },
     traces: new TraceStore(dir), docs: new DocStore(dir), signal: new AbortController().signal, sleep: async () => undefined,
   };
   return { deps, actions, prompts, schemas };
@@ -90,6 +90,20 @@ describe('browser_run_goal loop', () => {
     const r = await runGoal(moving.deps, args({ maxSteps: 3 }));
     expect(r.stopReason).toBe('max_steps');
     expect(r.steps).toHaveLength(3);
+  });
+
+  it('uses the per-decider threshold and reports who decided and why it escalated', async () => {
+    const h = harness([]);
+    let k = 0;
+    h.deps.decide = async () => (k++ === 0
+      ? { raw: { op: 'TYPE', target: 1, inputKey: 'first name', confidence: 0.55 }, source: 'laya', minConfidence: 0.5 }
+      : { raw: { op: 'DONE', target: null, inputKey: null, confidence: 0.9 }, source: 'qwen', escalated: 'laya unsure (0.20)' });
+    const r = await runGoal(h.deps, args());
+    expect(r.stopReason).toBe('done');
+    expect(r.steps.map((s) => s.source)).toEqual(['laya', 'qwen']);
+    expect(r.steps[1]!.escalated).toMatch(/unsure/);
+    expect(r.stats).toMatchObject({ escalations: 1, decidedBy: { laya: 1, qwen: 1, memory: 0 } });
+    expect(new TraceStore(dir).stats().byDecider).toMatchObject({ laya: { steps: 1, ok: 1 } });
   });
 
   it('stops when the human denies an approval', async () => {

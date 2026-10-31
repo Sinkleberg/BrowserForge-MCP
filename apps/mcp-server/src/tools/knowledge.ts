@@ -24,9 +24,9 @@ export function registerKnowledgeTools(server: McpServer, ctx: ServerContext): v
   });
   registerTool(server, ctx, {
     name: 'knowledge_list', title: 'List documents and memory', readOnly: true,
-    description: 'Indexed reference documents, run-memory statistics and the local model status.',
+    description: 'Indexed reference documents, run-memory statistics (including the steps recorded from the person with "Record me" under byDecider.human), how many sites have saved knowledge, and the local model status.',
     input: z.object({}),
-    run: async () => ({ documents: docs.list(), traces: { recording: traces.enabled, ...traces.stats() }, decider: await deciderStatus(ctx.config.decider) }),
+    run: async () => ({ documents: docs.list(), traces: { recording: traces.enabled, ...traces.stats() }, sites: ctx.knowledge.sites.list().length, decider: await deciderStatus(ctx.config.decider) }),
   });
   registerTool(server, ctx, {
     name: 'knowledge_remove', title: 'Remove a document', readOnly: false,

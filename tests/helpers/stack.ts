@@ -12,6 +12,7 @@ export interface Demo {
   port: number;
   orders: unknown[];
   applications: Record<string, unknown>[];
+  signups: Record<string, string>[];
   hits: { method: string; path: string }[];
   close(): Promise<void>;
 }
@@ -27,8 +28,9 @@ export interface Stack {
 
 export const ROOT = path.resolve(import.meta.dirname, '../..');
 
-export async function startStack(opts: { allowReveal?: boolean } = {}): Promise<Stack> {
+export async function startStack(opts: { allowReveal?: boolean; beforeStart?: (home: string) => Promise<void> | void } = {}): Promise<Stack> {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'bf-home-'));
+  await opts.beforeStart?.(home); // e.g. install a plugin or write a skill before the server loads them
   const demo: Demo = await startDemoSite({ port: 0 });
   const app = createApp({ port: 0, configDir: home, allowReveal: opts.allowReveal ?? false, logLevel: 'error', extraAllowDirs: [home] });
   await app.listen();

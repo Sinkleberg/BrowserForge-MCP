@@ -24,14 +24,18 @@ const common = {
   host_permissions: ['<all_urls>'],
 };
 
-function manifest(target, e2e) {
+function manifest(target, e2e, bodies = false) {
   const firefox = target === 'firefox';
-  const optional = firefox ? ['downloads', 'webRequestBlocking', 'webRequestFilterResponse'] : ['downloads', 'debugger'];
+  // Chrome rejects "debugger" as an optional permission ("cannot be listed as optional"), so response-body capture there is a separate
+  // build (`chrome-bodies`) where it is required. Firefox can ask for its body permissions at run time.
+  const optional = firefox ? ['downloads', 'webRequestBlocking', 'webRequestFilterResponse'] : ['downloads'];
   const base = ['tabs', 'storage', 'scripting', 'webRequest', 'alarms'];
+  const required = !firefox && (bodies || e2e) ? ['debugger'] : [];
   const m = {
     manifest_version: 3,
     ...common,
-    permissions: e2e ? [...base, ...optional] : base,
+    ...(bodies ? { description: `${common.description} This build can also capture response bodies, using Chrome's debugger permission (Chrome then shows a "debugging this browser" banner on captured tabs).` } : {}),
+    permissions: e2e ? [...base, ...optional, ...required] : [...base, ...required],
     ...(e2e ? {} : { optional_permissions: optional }),
     content_security_policy: { extension_pages: "script-src 'self'; object-src 'self'" },
   };
@@ -85,7 +89,7 @@ function png(size) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 
-async function buildTarget(name, target, e2e) {
+async function buildTarget(name, target, e2e, bodies = false) {
   const out = path.join(dist, name);
   fs.rmSync(out, { recursive: true, force: true });
   fs.mkdirSync(path.join(out, 'icons'), { recursive: true });
@@ -93,21 +97,23 @@ async function buildTarget(name, target, e2e) {
   await build({ ...shared, entryPoints: { background: path.join(root, 'src/background.ts'), content: path.join(root, 'src/content.ts'), popup: path.join(root, 'src/popup.ts'), approve: path.join(root, 'src/approve.ts'), 'page-hook': path.join(root, 'src/page-hook.ts') }, outdir: out });
   for (const f of fs.readdirSync(path.join(root, 'static'))) fs.copyFileSync(path.join(root, 'static', f), path.join(out, f));
   for (const s of [16, 32, 48, 128]) fs.writeFileSync(path.join(out, 'icons', `${s}.png`), png(s));
-  fs.writeFileSync(path.join(out, 'manifest.json'), JSON.stringify(manifest(target, e2e), null, 2));
+  fs.writeFileSync(path.join(out, 'manifest.json'), JSON.stringify(manifest(target, e2e, bodies), null, 2));
   console.log(`built ${path.relative(process.cwd(), out)}`);
 }
 
 await buildTarget('firefox', 'firefox', false);
 await buildTarget('chrome', 'chrome', false);
+await buildTarget('chrome-bodies', 'chrome', false, true);
 await buildTarget('firefox-e2e', 'firefox', true);
 await buildTarget('chrome-e2e', 'chrome', true);
 
 if (process.argv.includes('--package')) {
   const art = path.resolve(root, '../../artifacts');
   fs.mkdirSync(art, { recursive: true });
-  const webext = path.resolve(root, '../../node_modules/.bin/web-ext');
-  for (const t of ['firefox', 'chrome']) {
-    execFileSync(webext, ['build', '--source-dir', path.join(dist, t), '--artifacts-dir', art, '--filename', `browserforge-${t}-${VERSION}.zip`, '--overwrite-dest'], { stdio: 'inherit' });
+  // Run web-ext's script with this node: node_modules/.bin/web-ext is a shell script, which Windows cannot start directly.
+  const webext = path.resolve(root, '../../node_modules/web-ext/bin/web-ext.js');
+  for (const t of ['firefox', 'chrome', 'chrome-bodies']) {
+    execFileSync(process.execPath, [webext, 'build', '--source-dir', path.join(dist, t), '--artifacts-dir', art, '--filename', `browserforge-${t}-${VERSION}.zip`, '--overwrite-dest'], { stdio: 'inherit' });
   }
   console.log(`packages written to ${art}`);
 }

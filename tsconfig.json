@@ -20,6 +20,12 @@
       "path": "packages/knowledge"
     },
     {
+      "path": "packages/flows"
+    },
+    {
+      "path": "packages/plugin-sdk"
+    },
+    {
       "path": "apps/mcp-server"
     }
   ]

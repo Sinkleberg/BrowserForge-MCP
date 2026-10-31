@@ -1,4 +1,45 @@
-# Installation (Ubuntu / Linux)
+# Installation
+
+* **[From the package](#install-from-the-package-any-system)**: for trying BrowserForge on Linux, macOS or Windows. No build step.
+* **[From source on Ubuntu](#1-build)**: for developing it (the rest of this page).
+
+## Install from the package (any system)
+
+You need [Node.js 22 or newer](https://nodejs.org) and Chrome, Edge, Brave or Firefox.
+
+```bash
+# the package is a single tarball built by `npm run release` (see docs/RELEASE_CHECKLIST.md); once published: npm install -g browserforge-mcp
+npm install -g ./browserforge-mcp-0.1.0.tgz
+browserforge setup
+```
+
+`browserforge setup` prints the next steps with **your** folders and token filled in: where to load the extension in your browser, what to type in its popup, and the command that connects Claude Code. In short:
+
+1. **Start the server and keep it running:** `browserforge serve`.
+2. **Load the extension.** Chrome, Edge or Brave: open `chrome://extensions` (or `edge://extensions`), switch on *Developer mode*, *Load unpacked*, and choose the folder `browserforge extension chrome` prints (`chrome-bodies` if you want response bodies captured; see below). Firefox: `about:debugging#/runtime/this-firefox`, *Load Temporary Add-on*, and choose `manifest.json` inside the folder `browserforge extension firefox` prints. Firefox removes temporary add-ons when it restarts; a permanent install needs a signed build (see "Firefox" below).
+3. **Connect the extension:** click its icon, enter `ws://127.0.0.1:7345/ext` and the token from `browserforge setup`, press *Connect*.
+4. **Connect your AI client**, for example `claude mcp add --transport http browserforge http://127.0.0.1:7345/mcp --header "Authorization: Bearer <token>"` (`browserforge print-config claude` prints it for your shell).
+5. **Check:** `browserforge doctor`.
+
+### Where files go
+
+| System | Settings, tokens, logs, flows, knowledge |
+|---|---|
+| Linux, macOS | `~/.config/browserforge/` (or `$XDG_CONFIG_HOME/browserforge`) |
+| Windows | `%APPDATA%\browserforge\` |
+
+Set `BROWSERFORGE_HOME` to put them somewhere else. On Linux and macOS the folders are private to your user (mode 0700, files 0600). **Windows does not enforce those modes**: the folder is protected by your user profile's permissions, so do not move it to a shared drive.
+
+### Windows and macOS: what is and is not known
+
+The package is plain JavaScript and the install steps are the same everywhere, and the project's CI installs the package and starts the server on Ubuntu, Windows and macOS. **Everything here has been run only on Linux by the author.** The Windows and macOS CI runs are informational until they have been green for a while. Known differences:
+
+* Plugins that run programs (RenderCV) need the program's full path in the plugin settings, for example `C:\Users\you\rendercv\.venv\Scripts\rendercv.exe`. `.cmd` and `.bat` files cannot be started this way.
+* `browserforge plugin add` runs npm for you; on Windows it uses the npm that comes with your Node.js.
+* Chrome shows a "Disable developer mode extensions" notice on Windows after each restart; choose *Keep*. Branded Chrome 137 and newer ignores the `--load-extension` command-line flag, so always use *Load unpacked*.
+* Quote the token in PowerShell as `browserforge print-config claude` shows it.
+
+## Install from source (Ubuntu / Linux)
 
 Tested on Ubuntu with Node 24.7, Firefox 158 (snap), Chromium 156 (Playwright build). Other Linux distributions should work; macOS/Windows have not been tested.
 
@@ -57,6 +98,16 @@ Firefox forgets temporary add-ons on restart. For a permanent install use one of
 2. Open the popup, paste the extension token, **Connect**.
 
 The Chrome build pins a public key, so its extension id is always `omjlkhmfagboopakfflhapniolpfbogp`. Minimum Chrome: 116.
+
+#### Response bodies in Chrome (optional)
+
+Capturing **response bodies** (so `api_analyze_traffic` can describe what an API returns) needs Chrome's `debugger` permission. Chrome does not allow that permission to be optional, so it cannot be granted from the popup the way Firefox's can. Instead there is a second build:
+
+1. Remove the normal one at `chrome://extensions` (both builds share the same extension id, so only one can be loaded), or just use **Load unpacked** on the other folder after removing it.
+2. **Load unpacked** `apps/firefox-extension/dist/chrome-bodies`.
+3. Reconnect (token as before), open **Network capture** in the popup and tick **Capture response bodies**.
+
+While a tab is captured, Chrome shows a "BrowserForge started debugging this browser" banner on it. That is Chrome's own warning and cannot be hidden. If you do not need bodies, stay on the normal `dist/chrome` build, which does not hold the permission at all. Request metadata (URLs, methods, status, headers, timing) is captured in both builds.
 
 > Automated installation (`--load-extension`) is disabled in branded Chrome ≥ 137; the manual route above works. Automated tests use Playwright's Chromium.
 

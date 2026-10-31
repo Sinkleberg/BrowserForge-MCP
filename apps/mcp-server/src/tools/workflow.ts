@@ -5,6 +5,8 @@ import type { ServerContext } from '../context.js';
 import { registerTool } from './helpers.js';
 
 export const WORKFLOW_TOOL_PREFIXES = ['browser_', 'network_', 'api_', 'form_'];
+/** Single tools outside those families that workflows may call: replaying a recorded flow still passes every approval. */
+export const WORKFLOW_TOOLS = new Set(['flow_run']);
 
 const StepSchema = z.object({
   tool: z.string().min(1).max(64).describe('Name of a browser_*, network_*, api_* or form_* tool'),
@@ -55,7 +57,7 @@ function summary(s: ReturnType<ServerContext['workflows']['get']>) {
 }
 
 export function validateWorkflowStep(ctx: ServerContext, spec: { tool: string; args: Record<string, unknown> }): void {
-  if (!WORKFLOW_TOOL_PREFIXES.some((p) => spec.tool.startsWith(p))) throw new BrowserForgeError('INVALID_ARGUMENTS', `Tool '${spec.tool}' cannot be used in workflows`);
+  if (!WORKFLOW_TOOL_PREFIXES.some((p) => spec.tool.startsWith(p)) && !WORKFLOW_TOOLS.has(spec.tool) && !ctx.plugins.workflowSafe.has(spec.tool)) throw new BrowserForgeError('INVALID_ARGUMENTS', `Tool '${spec.tool}' cannot be used in workflows`);
   const entry = ctx.tools.get(spec.tool);
   if (!entry) throw new BrowserForgeError('INVALID_ARGUMENTS', `Unknown tool '${spec.tool}'`);
   const parsed = entry.input.safeParse(spec.args);

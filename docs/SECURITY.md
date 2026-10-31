@@ -22,12 +22,35 @@ Enforced **in the extension** (not in the MCP client):
 - `type`/`fill_field` into a password field; `type` with `submit:true`; `Enter` inside a form **or a rich-text editor / `role=textbox`** (Enter usually sends a chat message; Shift+Enter does not ask).
 - `fill_form` with `files` (uploads) or `submit:true`.
 - Workflow steps with an `approval` text.
+- `browser_close_tab` on a tab the agent did not open itself (tabs it opened with `newTab` close without asking).
 
-The prompt appears as a badge and in the popup (host, action). The agent receives the result only after the human answers; denial returns `APPROVAL_DENIED`; no answer within 2 minutes counts as denial. The approval flag is set by the background script only — page scripts and the agent cannot set it.
+The prompt opens in a small **approval window** (brought to the front, with a chime that can be turned off in the popup; Enter approves the first request, Esc denies it) and as a badge on the toolbar button. Every decision (approved, denied, timed out, cancelled) is saved in the popup's **Approval history** (last 1000, exportable as JSON, clearable). The agent receives the result only after the human answers; denial returns `APPROVAL_DENIED`; no answer within 2 minutes counts as denial. The approval flag is set by the background script only — page scripts and the agent cannot set it.
+
+### YOLO mode
+
+An optional switch in the popup (**Approvals → YOLO**) that makes every approval pass automatically, for every agent connected to that browser, including passwords, uploads, submits and sends. It is **off by default**, **per browser**, and stays on until you turn it off.
+
+- Only a human can change it: the setting is written only from the extension's own popup page. The agent protocol, the server and web pages have no way to set it, and the generic `saveSettings` message ignores it, so a prompt-injected page cannot switch the gate off.
+- It is loud: the toolbar badge shows red `YOLO`, the popup shows a banner with a one-click Turn off, and `system_diagnostics` reports `approval-mode` as not ok.
+- It is still logged: every auto-approval appears in the approval history as `auto (YOLO)`.
+- STOP and Pause still work and still win.
+- Treat it like leaving your laptop unlocked: any page that manages to steer the agent can then submit forms and send messages as you. Use it on a dedicated browser profile, not your everyday one.
 
 **STOP:** the popup's STOP button cancels in-flight work, denies pending approvals and blocks all agent actions. The agent's `browser_resume` is refused (`PERMISSION_DENIED`) while STOP was pressed by the human; only the popup can resume.
 
 Heuristics are not a guarantee: a site can disguise a harmful button as "Show more". Keep the popup visible during sensitive sessions and use STOP freely. The classification errs toward asking.
+
+## Local decider (`browser_run_goal`)
+
+`browser_run_goal` lets small models on this machine choose routine steps: by default Laya (via Ollaya, `127.0.0.1:11435`) first and Qwen (via Ollama, `127.0.0.1:11434`) when Laya is unsure. Page control labels and headings are sent to them, so **both** URLs must be loopback (`127.0.0.1`, `localhost` or `::1`); anything else is refused at startup. Laya only answers typed choice questions (action, which control, which input key), so it cannot produce free text either. The model's reply is constrained by a JSON schema to a row that exists on the page, one of the operations (no navigation, no free text) and one of the input keys the caller supplied. Input **values** are never put in a prompt or a trace. Every step it takes goes through the same approval gate (or YOLO) as any other action.
+
+Recorded traces (`<config>/knowledge/traces.jsonl`) contain control labels (emails and long numbers are masked), the decision and whether it worked, never input values, never page text. Disable with `--no-traces`; old traces are deleted after `--trace-retention-days` (default 90). Indexed reference documents stay local and are only readable from allowed upload directories.
+
+## Plugins, skills and flows
+
+* **Plugins are code that runs on this computer with your user rights.** What is enforced: they receive a `PluginApi` whose file access is limited to declared folders (symlink-safe), whose programs are limited to declared ones (no shell, minimal environment), and whose browser calls go through the normal actions and the extension's approval gate. You see the permissions in plain words at install and must approve them; a version that asks for different permissions is switched off until you approve again; installs run with `--ignore-scripts`. What is **not** enforced: a plugin that imports `node:fs` itself is not stopped by the API. Install only plugins from authors you trust. Process isolation is future work. Details: [PLUGINS.md](PLUGINS.md).
+* **Skills are text for your agent**, written by someone else. They cannot run code or bypass approvals, but they can steer an agent: `skill add` prints the instructions before installing, and the server labels skill text as "written by the skill's author, not by the user". Tool names, descriptions and instructions from plugins are likewise the plugin author's words; core safety rules come first in the server instructions and always win.
+* **Flows** are saved under `<config>/flows` (private files). They contain page addresses, element descriptions (labels, ids) and the non-sensitive values you typed as parameter defaults; passwords and sensitive-looking fields are never recorded. Turn recording off with `--no-flows`. Exported scripts embed values only when you ask, never sensitive ones, and stop before consequential steps unless `FLOW_CONFIRM=1`.
 
 ## Secrets
 
@@ -40,7 +63,7 @@ Heuristics are not a guarantee: a site can disguise a harmful button as "Show mo
 
 ## Extension privileges
 
-Permissions: `tabs`, `storage`, `scripting`, `webRequest`, `alarms`, and host permission `<all_urls>` (needed for `tabs.captureVisibleTab` screenshots and `webRequest` capture on whatever site you point the agent at). Content scripts are injected only on `http://` and `https://` pages; browser-internal pages are never scripted. **Optional** (requested from the popup, only when you enable the feature): `downloads`; Firefox `webRequestBlocking` + `webRequestFilterResponse` (response bodies); Chrome `debugger` (response bodies, WebSocket frames). Not requested: `cookies`, `history`, `management`, `nativeMessaging`, `webNavigation`, `activeTab`.
+Permissions: `tabs`, `storage`, `scripting`, `webRequest`, `alarms`, and host permission `<all_urls>` (needed for `tabs.captureVisibleTab` screenshots and `webRequest` capture on whatever site you point the agent at). Content scripts are injected only on `http://` and `https://` pages; browser-internal pages are never scripted. **Optional** (requested from the popup, only when you enable the feature): `downloads`; Firefox `webRequestBlocking` + `webRequestFilterResponse` (response bodies). **Chrome does not allow `debugger` to be optional**, so response bodies and WebSocket frames in Chrome need a separate build, `dist/chrome-bodies`, where `debugger` is a required permission (Chrome shows a "debugging this browser" banner on captured tabs); the normal `dist/chrome` build does not hold it. Not requested: `cookies`, `history`, `management`, `nativeMessaging`, `webNavigation`, `activeTab`.
 
 The extension talks only to `ws://127.0.0.1` / `ws://localhost` (it refuses any other URL) and sends nothing to any third party. The content script runs in the extension's isolated world; the only main-world script (`page-hook.js`) forwards uncaught-error strings and has no extension privileges.
 
@@ -55,3 +78,17 @@ Use network capture and API analysis only on sites you are authorised to inspect
 ## Reporting
 
 This is pre-release software without an external audit. Tests covering the controls above: `tests/security/*`, `tests/unit/shared.test.ts`, `tests/unit/hub.test.ts`, and the approval/untrusted-content cases in `tests/e2e/*`.
+
+## The log file
+
+`~/.config/browserforge/logs/` (mode 0700, files 0600) holds the server's log: tool calls, browser actions, errors and the extension's activity timeline. It goes through the same redaction as terminal logs: typed values, page text, HTML, headers, cookies, bodies, screenshots, tool arguments and results are dropped, secrets in strings are masked and long strings cut at 300 characters. It still shows *what you did and when* (sites visited by host, which tools ran), so treat it as private: review `browserforge diagnostics` output before pasting it in a public issue. Retention is 14 days (`--log-retention-days`), `--no-log-file` turns it off.
+
+## Record me (recording your own actions)
+
+An opt-in switch in the extension popup, **off by default** and never active in private windows. While on, the page script notes the elements you click, select and fill, and sends a description (the element's locators, its label, the page address and the page's control rows) to the local server. It does **not** send page text.
+
+* A typed value is sent only if you also turn on "Also keep the text I type", and **never** for password-like fields (password type, `autocomplete` of card or one-time-code, or a name, id, placeholder or label that looks like a password, card number, CVV, IBAN, SSN, OTP, token, secret or PIN). The extension and the server both enforce this; the value never reaches the flow, the traces or the log.
+* Only trusted events count: BrowserForge's own tools produce synthetic events, which are ignored.
+* The extension limits the rate (25 events a second) and clamps every field to the protocol's limits before sending; the server drops a browser that sends many malformed messages.
+* Data goes to `<config>/flows/` and `<config>/knowledge/` on your computer, private (0600), and nowhere else. Control rows in training examples have emails and phone-like numbers scrubbed from their labels.
+* What it still reveals: which sites you visited and what the form fields were called. Treat the folder like your browsing history, and turn the switch off on pages you do not want in it.

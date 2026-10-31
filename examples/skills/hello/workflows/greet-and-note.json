@@ -1,0 +1,11 @@
+{
+  "name": "Greet and note",
+  "description": "Looks at the recorded network traffic list (a harmless read) so the example workflow has a real step; replace it with your own steps.",
+  "inputs": {
+    "who": { "description": "Who to greet", "required": true },
+    "limit": { "description": "How many requests to list", "default": "5" }
+  },
+  "steps": [
+    { "tool": "network_list_requests", "args": { "limit": 5 }, "label": "Look at traffic for {{who}}" }
+  ]
+}

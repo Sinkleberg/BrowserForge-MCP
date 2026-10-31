@@ -63,7 +63,7 @@ describe('without a browser', () => {
     const d = (await stack.call('system_diagnostics')).data;
     expect(d.checks.find((c: any) => c.name === 'loopback-binding').ok).toBe(true);
     expect(d.checks.find((c: any) => c.name === 'extension-token-permissions').ok).toBe(true);
-    expect(fs.statSync(path.join(stack.home, 'extension-token')).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(fs.statSync(path.join(stack.home, 'extension-token')).mode & 0o777).toBe(0o600);
   });
 });
 

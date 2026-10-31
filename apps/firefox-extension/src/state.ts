@@ -9,6 +9,14 @@ export interface Settings {
   yolo: boolean;
   /** Play a chime when an approval is waiting. */
   approvalSound: boolean;
+  /** "Record me": notes what the person does themselves so it can become a flow and training examples. Off by default, never in private windows. */
+  recordHuman: boolean;
+  /** The agent works in its own window (and tabs it opens), never in the tabs you are using, unless it selects one of yours on purpose. */
+  agentWindow: boolean;
+  /** Also keep the text the person typed (otherwise only which field it went into). Never for password-like fields. */
+  recordValues: boolean;
+  /** Optional: what they are doing, used as the example's goal. */
+  recordTask: string;
   capture: { enabled: boolean; captureBodies: boolean; tabIds: number[] | null; maxBodyBytes: number };
 }
 
@@ -35,6 +43,10 @@ export const DEFAULT_SETTINGS: Settings = {
   browserId: '',
   yolo: false,
   approvalSound: true,
+  recordHuman: false,
+  agentWindow: false,
+  recordValues: false,
+  recordTask: '',
   capture: { enabled: true, captureBodies: false, tabIds: null, maxBodyBytes: 200_000 },
 };
 
@@ -48,6 +60,8 @@ export const runtime = {
   humanLocked: false,
   selectedTabId: null as number | null,
   approvalWindowId: null as number | null,
+  /** The window the agent works in when "Agent window" is on (only while it is open). */
+  agentWindowId: null as number | null,
   /** Last browser window of type 'normal' that had focus: the approval popup must never count as "the active tab". */
   lastNormalWindowId: null as number | null,
 };
@@ -70,16 +84,46 @@ export function getSettings(): Settings {
 
 export async function saveSettings(patch: Partial<Settings> = {}): Promise<void> {
   settings = { ...settings, ...patch };
-  await api.storage.local.set({ settings });
+  // Page scripts of this extension must not read the settings (they hold the server token): the recorder gets only its own small key.
+  await api.storage.local.set({ settings, record: { on: settings.recordHuman, values: settings.recordValues, task: settings.recordTask } });
 }
 
-// Activity log lives in memory (the event page / service worker may restart; it is only a convenience view).
+// The activity timeline is kept in memory for the popup and saved to storage (debounced) so it survives the event page / service
+// worker restarting and the browser being closed. It holds action names and short summaries, never typed values or page text.
 export const activity: ActivityItem[] = [];
+const ACTIVITY_KEY = 'activityLog';
+const ACTIVITY_MAX = 1000;
+let activityTimer: ReturnType<typeof setTimeout> | null = null;
+
+function saveActivity(): void {
+  activityTimer = null;
+  void api.storage.local.set({ [ACTIVITY_KEY]: activity.slice(-ACTIVITY_MAX) }).catch(() => {
+    /* best effort */
+  });
+}
+
 export function logActivity(item: Omit<ActivityItem, 'at'>): ActivityItem {
   const full = { at: Date.now(), ...item };
   activity.push(full);
-  if (activity.length > 500) activity.shift();
+  if (activity.length > ACTIVITY_MAX) activity.shift();
+  activityTimer ??= setTimeout(saveActivity, 500);
   return full;
+}
+
+/** Restore the saved timeline at startup (anything logged meanwhile stays after it). */
+export async function loadActivity(): Promise<void> {
+  try {
+    const saved = ((await api.storage.local.get(ACTIVITY_KEY)) as { [ACTIVITY_KEY]?: ActivityItem[] })[ACTIVITY_KEY];
+    if (Array.isArray(saved)) activity.unshift(...saved.slice(-ACTIVITY_MAX).filter((a) => a && typeof a.at === 'number' && typeof a.action === 'string'));
+  } catch {
+    /* start empty */
+  }
+}
+
+export function clearActivity(): void {
+  activity.length = 0;
+  if (activityTimer) clearTimeout(activityTimer);
+  saveActivity();
 }
 
 export interface ApprovalRecord {
