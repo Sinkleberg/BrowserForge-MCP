@@ -145,6 +145,12 @@ function requestBodyOf(details: any, max: number): { text?: string; truncated?: 
   return {};
 }
 
+/** Can this build ever get the body permission (is it declared as optional)? Chrome's default build cannot: see build.mjs. */
+export function bodyCapturePossible(): boolean {
+  const optional = ((api.runtime.getManifest() as { optional_permissions?: string[] }).optional_permissions ?? []);
+  return optional.includes(isFirefox ? 'webRequestFilterResponse' : 'debugger');
+}
+
 /** Whether the optional response-body permission is currently available. */
 export async function bodyCaptureAvailable(): Promise<boolean> {
   try {

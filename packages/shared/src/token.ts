@@ -13,8 +13,18 @@ export function safeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(ha, hb);
 }
 
+/**
+ * Where BrowserForge keeps its tokens, logs, flows and knowledge: BROWSERFORGE_HOME if set; on Windows %APPDATA%\browserforge;
+ * elsewhere $XDG_CONFIG_HOME/browserforge or ~/.config/browserforge (macOS included, so the docs read the same everywhere).
+ */
+export function standardConfigDir(platform: NodeJS.Platform, env: NodeJS.ProcessEnv, home: string): string {
+  if (env.BROWSERFORGE_HOME) return env.BROWSERFORGE_HOME;
+  if (platform === 'win32') return path.win32.join(env.APPDATA ?? path.win32.join(home, 'AppData', 'Roaming'), 'browserforge');
+  return path.join(env.XDG_CONFIG_HOME ?? path.join(home, '.config'), 'browserforge');
+}
+
 export function configDir(): string {
-  const base = process.env.BROWSERFORGE_HOME ?? path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), '.config'), 'browserforge');
+  const base = standardConfigDir(process.platform, process.env, os.homedir());
   fs.mkdirSync(base, { recursive: true, mode: 0o700 });
   return base;
 }
@@ -29,6 +39,10 @@ export function loadOrCreateToken(file: string): string {
   }
   const token = generateToken();
   fs.writeFileSync(file, token + '\n', { mode: 0o600 });
-  fs.chmodSync(file, 0o600);
+  try {
+    fs.chmodSync(file, 0o600);
+  } catch {
+    /* Windows has no file modes: the folder inside the user's profile is what protects it */
+  }
   return token;
 }

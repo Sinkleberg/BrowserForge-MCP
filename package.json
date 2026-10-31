@@ -10,7 +10,8 @@
   },
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "plugins/*"
   ],
   "scripts": {
     "build": "tsc -b && npm run build -w @browserforge/extension",
@@ -21,7 +22,9 @@
     "test:all": "vitest run",
     "package": "npm run build && npm run package -w @browserforge/extension",
     "dev": "node scripts/dev.mjs",
-    "serve": "node apps/mcp-server/dist/cli.js serve"
+    "serve": "node apps/mcp-server/dist/cli.js serve",
+    "release": "npm run package && node scripts/package-release.mjs",
+    "smoke:install": "node scripts/smoke-install.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

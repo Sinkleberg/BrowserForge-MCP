@@ -98,12 +98,42 @@ box.addEventListener('click',()=>{list.hidden=!list.hidden;});
 window.addEventListener('scroll',()=>{list.hidden=true;});`);
 
 const SIGNUP = page('Signup fixture', `
-<form id="f" onsubmit="event.preventDefault();window.__submitted={first:document.getElementById('first').value,last:document.getElementById('last').value,month:document.getElementById('mon').value};document.getElementById('done').hidden=false;">
+<form id="f" onsubmit="event.preventDefault();window.__submitted={first:document.getElementById('first').value,last:document.getElementById('last').value,month:document.getElementById('mon').value};fetch('/signup-submit',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(window.__submitted)});document.getElementById('done').hidden=false;">
 <label>First name <input id="first" name="first" autocomplete="off"></label>
 <label>Last name <input id="last" name="last" autocomplete="off"></label>
 <label>Birth month <select id="mon" name="month"><option value="">Month</option><option>January</option><option>February</option><option>July</option><option>December</option></select></label>
 <button id="go" type="submit">Submit</button></form>
-<p id="done" hidden>Thanks, your account was created.</p>`, `window.__submitted=null;`);
+<p id="done" role="status" hidden>Thanks, your account was created.</p>`, `window.__submitted=null;`);
+
+const TABLES = page('Tables fixture', `
+<table id="jobs"><caption>Open roles</caption><thead><tr><th>Role</th><th>Team</th><th>Apply</th></tr></thead><tbody>
+<tr><td>AI Engineer</td><td rowspan="2">Research</td><td><a href="/apply/1">Apply</a></td></tr>
+<tr><td>ML Engineer</td><td><a href="/apply/2">Apply</a></td></tr>
+<tr><td colspan="2">=HYPERLINK("http://evil.test","click")</td><td></td></tr></tbody></table>
+<table id="layout"><tr><td>just a layout cell</td></tr></table>
+<table id="hidden" style="display:none"><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>
+<div role="grid" aria-label="Scores"><div role="row"><span role="columnheader">Player</span><span role="columnheader">Score</span></div><div role="row"><span role="gridcell">Ada</span><span role="gridcell">10</span></div><div role="row"><span role="gridcell">Grace</span><span role="gridcell">12</span></div></div>
+<iframe id="tf" title="table frame" src="/table-frame" width="300" height="120"></iframe>`);
+const TABLE_FRAME = page('Table frame', `<table><tr><th>Item</th><th>Qty</th></tr><tr><td>Pens</td><td>3</td></tr></table>`);
+
+const UPLOAD = page('Upload fixture', `
+<p>Like many job portals: the file box only exists inside a dialog, is hidden behind a drop zone and has no label, name or id.</p>
+<button id="open-upload" type="button">Carica il tuo CV</button>
+<div id="dlg" role="dialog" hidden><div class="dropzone">Trascina qui il tuo curriculum (PDF)</div></div>`,
+`window.__uploaded=null;
+document.getElementById('open-upload').onclick=()=>{const d=document.getElementById('dlg');d.hidden=false;
+ if(!d.querySelector('input')){const i=document.createElement('input');i.type='file';i.accept='.pdf,.doc,.docx';i.style.display='none';
+ i.addEventListener('change',()=>{window.__uploaded=i.files[0]&&i.files[0].name;});d.querySelector('.dropzone').appendChild(i);}};`);
+
+const FRAME_FORM = page('Frame form', `
+<label>Frame email <input id="fe" type="text" autocomplete="off"></label>
+<button id="fb" type="button" onclick="parent.postMessage({email:document.getElementById('fe').value},'*')">Save frame</button>
+<form id="ff" onsubmit="event.preventDefault()"><label>Frame phone <input name="phone" id="fp" autocomplete="off"></label><button type="submit">Send phone</button></form>`);
+const framesPage = (host) => page('Frames fixture', `
+<h1>Parent page</h1><button id="parent-btn" type="button">Parent button</button>
+<iframe id="same" title="same origin" src="/frame-form" width="420" height="200"></iframe>
+<iframe id="cross" title="cross origin" src="http://${String(host).replace('127.0.0.1', 'localhost')}/frame-form" width="420" height="200"></iframe>`,
+`window.__msgs=[];window.addEventListener('message',e=>window.__msgs.push(e.data));`);
 
 const json = (res, status, body, headers = {}) => { res.writeHead(status, { 'content-type': 'application/json', ...headers }); res.end(JSON.stringify(body)); };
 const readBody = (req) => new Promise((r) => { const c = []; req.on('data', (d) => c.push(d)); req.on('end', () => r(Buffer.concat(c).toString('utf8'))); });
@@ -112,6 +142,7 @@ const authed = (req) => req.headers.authorization === `Bearer ${DEMO_TOKEN}`;
 export function startDemoSite({ port = 0 } = {}) {
   const orders = [];
   const applications = [];
+  const signups = [];
   const hits = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -125,7 +156,13 @@ export function startDemoSite({ port = 0 } = {}) {
     if (p === '/evil') return html(EVIL);
     if (p === '/editor') return html(EDITOR);
     if (p === '/gate') return html(GATE);
+    if (p === '/frame-form') return html(FRAME_FORM);
+    if (p === '/frames') return html(framesPage(req.headers.host));
     if (p === '/signup') return html(SIGNUP);
+    if (p === '/tables') return html(TABLES);
+    if (p === '/table-frame') return html(TABLE_FRAME);
+    if (p === '/signup-submit' && req.method === 'POST') { signups.push(JSON.parse((await readBody(req)) || '{}')); return json(res, 200, { ok: true }); }
+    if (p === '/upload') return html(UPLOAD);
     if (p === '/slow') { await new Promise((r) => setTimeout(r, Number(url.searchParams.get('ms') ?? 3000))); return html(page('Slow', '<p>slow</p>')); }
 
     if (p === '/api/v1/products' && req.method === 'GET') {
@@ -186,7 +223,7 @@ export function startDemoSite({ port = 0 } = {}) {
   });
   return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve({
     server, port: server.address().port, url: `http://127.0.0.1:${server.address().port}`,
-    orders, applications, hits,
+    orders, applications, signups, hits,
     close: () => new Promise((r) => { server.closeAllConnections(); server.close(() => r()); }),
   })));
 }

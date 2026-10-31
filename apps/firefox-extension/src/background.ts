@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { ACTIONS, HelloAckSchema, PROTOCOL_VERSION, RequestSchema, CancelSchema, isActionName, isNavigableUrl, type ActionName, type Capabilities } from '@browserforge/browser-protocol';
 import { api, browserKind, browserVersion, isFirefox } from './browser-api.js';
 import { detachAll, setCdpEmitter, syncCdp } from './cdp.js';
-import { bodyCaptureAvailable, ensureBodyFiltering, registerCaptureListeners, setEmitter, setServerUrl } from './capture.js';
+import { bodyCaptureAvailable, bodyCapturePossible, ensureBodyFiltering, registerCaptureListeners, setEmitter, setServerUrl } from './capture.js';
 import type { ContentCall, ContentReply } from './messages.js';
-import { activity, clearApprovalHistory, getSettings, hostOf, loadApprovalHistory, loadSettings, logActivity, pendingApprovals, recordApproval, runtime, safeUrl, saveSettings, type ApprovalRecord } from './state.js';
+import { activity, clearActivity, clearApprovalHistory, getSettings, hostOf, loadActivity, loadApprovalHistory, loadSettings, logActivity, pendingApprovals, recordApproval, runtime, safeUrl, saveSettings, type ApprovalRecord } from './state.js';
 
 declare const __E2E__: boolean; // true only in the -e2e test builds (dead-stripped from release builds)
 
@@ -202,22 +202,51 @@ api.windows.onFocusChanged.addListener((id) => {
   void api.windows.get(id).then((w) => { if (w.type === 'normal') runtime.lastNormalWindowId = id; }).catch(() => undefined);
 });
 
-async function targetTab(tabId?: number): Promise<chrome.tabs.Tab> {
-  const id = tabId ?? runtime.selectedTabId ?? undefined;
-  if (id === undefined) return activeTab();
+/** The agent window if it is still open (the person may have closed it). */
+async function liveAgentWindow(): Promise<chrome.windows.Window | null> {
+  if (runtime.agentWindowId === null) return null;
   try {
-    return await api.tabs.get(id);
+    return await api.windows.get(runtime.agentWindowId, { populate: true });
   } catch {
-    if (tabId === undefined) {
-      runtime.selectedTabId = null;
-      return activeTab();
-    }
-    throw new ActionError('TAB_NOT_FOUND', `Tab ${id} does not exist`);
+    runtime.agentWindowId = null;
+    return null;
   }
 }
 
+/** Open the agent's own window (without stealing focus), showing `url`. Its first tab belongs to the agent. */
+async function openAgentWindow(url: string): Promise<chrome.tabs.Tab> {
+  const w = await api.windows.create({ url, type: 'normal', focused: false });
+  runtime.agentWindowId = w?.id ?? null;
+  const tab = w?.tabs?.[0];
+  if (!tab?.id) throw new ActionError('INTERNAL', 'Could not open the agent window');
+  agentTabs.add(tab.id);
+  runtime.selectedTabId = tab.id;
+  emitActivity({ action: 'agent_window', summary: 'Opened the agent window', tabId: tab.id, outcome: 'ok' });
+  return tab;
+}
+
+async function targetTab(tabId?: number): Promise<chrome.tabs.Tab> {
+  const id = tabId ?? runtime.selectedTabId ?? undefined;
+  if (id !== undefined) {
+    try {
+      return await api.tabs.get(id);
+    } catch {
+      if (tabId !== undefined) throw new ActionError('TAB_NOT_FOUND', `Tab ${id} does not exist`);
+      runtime.selectedTabId = null;
+    }
+  }
+  if (getSettings().agentWindow) {
+    // The agent never reaches into the tabs the person is using unless it picked one on purpose (browser_select_tab or a tabId).
+    const w = await liveAgentWindow();
+    const t = w?.tabs?.find((x) => x.active) ?? w?.tabs?.[0];
+    if (t) return t;
+    throw new ActionError('TAB_NOT_FOUND', 'The agent window has no tab yet. Open a page with browser_navigate (that opens the agent window), or choose one of the user\'s tabs with browser_select_tab.');
+  }
+  return activeTab();
+}
+
 function tabInfo(t: chrome.tabs.Tab) {
-  return { tabId: t.id, windowId: t.windowId, active: t.active, title: (t.title ?? '').slice(0, 200), url: t.url ?? '', status: t.status, incognito: t.incognito || undefined, selected: t.id === runtime.selectedTabId || undefined };
+  return { tabId: t.id, windowId: t.windowId, active: t.active, title: (t.title ?? '').slice(0, 200), url: t.url ?? '', status: t.status, incognito: t.incognito || undefined, selected: t.id === runtime.selectedTabId || undefined, agent: agentTabs.has(t.id!) || undefined, inAgentWindow: (runtime.agentWindowId !== null && t.windowId === runtime.agentWindowId) || undefined };
 }
 
 function assertScriptable(t: chrome.tabs.Tab): void {
@@ -259,35 +288,40 @@ function waitForComplete(tabId: number, timeoutMs: number, signal: AbortSignal, 
 }
 
 // ---------- content script bridge ----------
+/** Tabs the agent opened itself: it may close these without asking. */
+const agentTabs = new Set<number>();
 const injected = new Set<number>(); // tabs whose current document already answered a ping
 api.tabs.onUpdated.addListener((id, info) => { if (info.status === 'loading') injected.delete(id); });
-api.tabs.onRemoved.addListener((id) => injected.delete(id));
+api.tabs.onRemoved.addListener((id) => { injected.delete(id); agentTabs.delete(id); });
+// A page the agent opened may open more (an "Apply" link with target=_blank): those are the agent's to tidy up too.
+api.tabs.onCreated.addListener((t) => { if (t.id !== undefined && t.openerTabId !== undefined && agentTabs.has(t.openerTabId)) agentTabs.add(t.id); });
 
-async function ensureContent(tab: chrome.tabs.Tab): Promise<void> {
+async function ensureContent(tab: chrome.tabs.Tab, frameId = 0): Promise<void> {
   const id = tab.id!;
-  if (injected.has(id)) return;
+  if (frameId === 0 && injected.has(id)) return;
   try {
-    await api.tabs.sendMessage(id, { kind: 'bf-call', op: 'ping', args: {} } satisfies ContentCall);
-    injected.add(id);
+    await api.tabs.sendMessage(id, { kind: 'bf-call', op: 'ping', args: {} } satisfies ContentCall, { frameId });
+    if (frameId === 0) injected.add(id);
     return;
   } catch {
-    /* not injected yet (page loaded before the extension) */
+    /* not injected yet (page loaded before the extension, or a frame we have not touched) */
   }
   try {
-    await api.scripting.executeScript({ target: { tabId: id }, files: ['content.js'] });
-    injected.add(id);
+    await api.scripting.executeScript({ target: frameId === 0 ? { tabId: id } : { tabId: id, frameIds: [frameId] }, files: ['content.js'] });
+    if (frameId === 0) injected.add(id);
   } catch {
+    if (frameId !== 0) throw new ActionError('STALE_REF', 'The frame that owned this element is gone or cannot be scripted; call browser_get_interactive_elements again');
     throw new ActionError('UNSUPPORTED', 'Cannot inject into this page (restricted by the browser)');
   }
 }
 
-async function callContent(tab: chrome.tabs.Tab, op: string, args: Record<string, unknown>, signal: AbortSignal, approved = false): Promise<unknown> {
+async function callContent(tab: chrome.tabs.Tab, op: string, args: Record<string, unknown>, signal: AbortSignal, approved = false, frameId = 0): Promise<unknown> {
   assertScriptable(tab);
-  await ensureContent(tab);
+  await ensureContent(tab, frameId);
   signal.throwIfAborted();
   let reply: ContentReply;
   try {
-    reply = (await api.tabs.sendMessage(tab.id!, { kind: 'bf-call', op, args, approved } satisfies ContentCall)) as ContentReply;
+    reply = (await api.tabs.sendMessage(tab.id!, { kind: 'bf-call', op, args, approved } satisfies ContentCall, { frameId })) as ContentReply;
   } catch {
     injected.delete(tab.id!);
     throw new ActionError('NAVIGATION_FAILED', 'The page changed or closed while the action ran', true);
@@ -296,13 +330,114 @@ async function callContent(tab: chrome.tabs.Tab, op: string, args: Record<string
     const ok = await askApproval(reply.needsApproval.title, reply.needsApproval.detail, hostOf(tab.url), signal);
     if (!ok) throw new ActionError('APPROVAL_DENIED', 'The human denied this action');
     assertRunnable();
-    return callContent(tab, op, args, signal, true);
+    return callContent(tab, op, args, signal, true, frameId);
   }
   if (!reply?.ok) {
     const e = reply?.error ?? { code: 'INTERNAL', message: 'No reply from page' };
     throw new ActionError(e.code, e.message, false, e.details);
   }
   return reply.result;
+}
+
+// ---------- iframes ----------
+// Content scripts are injected on demand into each frame we need. A ref is "<epoch>:<n>" where the epoch identifies the frame's
+// content script, so we remember which frame owns which epoch and send ref-based calls straight there.
+const MAX_FRAMES = 6;
+const frameByEpoch = new Map<string, { tabId: number; frameId: number }>();
+function rememberEpoch(epoch: unknown, tabId: number, frameId: number): void {
+  if (typeof epoch !== 'string' || !epoch) return;
+  if (frameByEpoch.size >= 500) frameByEpoch.delete(frameByEpoch.keys().next().value as string);
+  frameByEpoch.set(epoch, { tabId, frameId });
+}
+/** Which frame should handle this call? The one that owns the ref it mentions, else the top frame. */
+function frameFor(tabId: number, args: Record<string, unknown>): number {
+  const files = Array.isArray(args.files) ? (args.files as { key?: unknown }[]).map((f) => f.key) : [];
+  for (const k of [args.ref, args.formRef, ...files]) {
+    if (typeof k !== 'string') continue;
+    const hit = frameByEpoch.get(k.split(':')[0]!);
+    if (hit && hit.tabId === tabId) return hit.frameId;
+  }
+  return 0;
+}
+async function childFrames(tabId: number): Promise<{ frameId: number; url: string }[]> {
+  try {
+    const res = await api.scripting.executeScript({ target: { tabId, allFrames: true }, func: () => location.href });
+    return res
+      .map((r) => ({ frameId: r.frameId ?? 0, url: String(r.result ?? '') }))
+      .filter((f) => f.frameId !== 0 && /^(https?:|about:blank$|about:srcdoc$)/.test(f.url))
+      .slice(0, MAX_FRAMES);
+  } catch {
+    return [];
+  }
+}
+const frameLabel = (url: string) => {
+  try {
+    const u = new URL(url);
+    return `${u.host}${u.pathname}`.slice(0, 80);
+  } catch {
+    return url.slice(0, 40);
+  }
+};
+
+type Json = Record<string, any>;
+/** Run a read op in the top frame and every iframe, and merge the answers so the agent sees one page. */
+async function callWithFrames(tab: chrome.tabs.Tab, op: string, args: Record<string, unknown>, signal: AbortSignal): Promise<unknown> {
+  const { includeFrames, ...rest } = args;
+  const top = (await callContent(tab, op, rest, signal)) as Json;
+  rememberEpoch(top.epoch, tab.id!, 0);
+  if (includeFrames === false) return top;
+  const frames = await childFrames(tab.id!);
+  if (!frames.length) return top;
+  const found: { frameId: number; url: string; res: Json }[] = [];
+  for (const f of frames) {
+    signal.throwIfAborted();
+    try {
+      const res = (await callContent(tab, op, rest, signal, false, f.frameId)) as Json;
+      rememberEpoch(res.epoch, tab.id!, f.frameId);
+      found.push({ ...f, res });
+    } catch {
+      /* a frame we cannot script (sandboxed, gone): skip it */
+    }
+  }
+  if (op === 'interactive_elements') {
+    const limit = Number(rest.limit ?? (rest.format === 'table' ? 100 : 300));
+    const frameInfo: Json[] = [];
+    if (top.rows) {
+      const rows: string[] = [...top.rows];
+      for (const f of found) {
+        const add: string[] = (f.res.rows ?? []).map((r: string, i: number) => r.replace(/^\d+/, String(rows.length + i + 1)));
+        if (!add.length) continue;
+        frameInfo.push({ frameId: f.frameId, url: frameLabel(f.url), controls: add.length });
+        rows.push(...add.slice(0, Math.max(0, limit - rows.length)));
+      }
+      return { ...top, rows: rows.slice(0, limit), total: top.total + found.reduce((n, f) => n + (f.res.total ?? 0), 0), truncated: Boolean(top.truncated) || rows.length > limit, ...(frameInfo.length ? { frames: frameInfo } : {}) };
+    }
+    const elements: Json[] = [...(top.elements ?? [])];
+    for (const f of found) {
+      const add = (f.res.elements ?? []).map((e: Json) => ({ ...e, frame: f.frameId }));
+      if (!add.length) continue;
+      frameInfo.push({ frameId: f.frameId, url: frameLabel(f.url), controls: add.length });
+      elements.push(...add);
+    }
+    return { ...top, elements: elements.slice(0, limit), total: elements.length, truncated: Boolean(top.truncated) || elements.length > limit, ...(frameInfo.length ? { frames: frameInfo } : {}) };
+  }
+  if (op === 'tables') {
+    const tables: Json[] = [...(top.tables ?? [])];
+    for (const f of found) for (const t of f.res.tables ?? []) tables.push({ ...t, frame: { frameId: f.frameId, url: frameLabel(f.url) } });
+    return { ...top, tables: tables.map((t, i) => ({ ...t, index: i })) };
+  }
+  if (op === 'forms') {
+    const forms: Json[] = [...(top.forms ?? [])];
+    for (const f of found) forms.push(...(f.res.forms ?? []).map((x: Json) => ({ ...x, frame: { frameId: f.frameId, url: frameLabel(f.url) } })));
+    return { ...top, forms };
+  }
+  if (op === 'page_text') {
+    const max = Math.min(Number(rest.maxChars ?? 50_000), 200_000);
+    let text: string = top.text ?? '';
+    for (const f of found) if (f.res.text?.trim()) text += `\n\n--- iframe ${frameLabel(f.url)} ---\n${f.res.text}`;
+    return { ...top, text: text.slice(0, max), truncated: Boolean(top.truncated) || text.length > max, totalChars: text.length };
+  }
+  return top;
 }
 
 // ---------- approvals ----------
@@ -371,6 +506,10 @@ async function closeApprovalWindow(): Promise<void> {
   }
 }
 api.windows.onRemoved.addListener((id) => {
+  if (id === runtime.agentWindowId) {
+    runtime.agentWindowId = null;
+    emitActivity({ action: 'agent_window', summary: 'The agent window was closed', outcome: 'ok' });
+  }
   if (id === runtime.approvalWindowId) runtime.approvalWindowId = null;
 });
 
@@ -384,8 +523,9 @@ export function decideApproval(id: string, approved: boolean): void {
 function updateBadge(): void {
   const n = pendingApprovals.size;
   const yolo = getSettings().yolo;
-  const text = n > 0 ? String(n) : yolo ? 'YOLO' : runtime.paused ? '❚❚' : runtime.connected ? '' : '!';
-  const color = n > 0 ? '#d97706' : yolo ? '#dc2626' : runtime.paused ? '#6b7280' : runtime.connected ? '#16a34a' : '#dc2626';
+  const rec = getSettings().recordHuman;
+  const text = n > 0 ? String(n) : yolo ? 'YOLO' : rec ? 'REC' : runtime.paused ? '❚❚' : runtime.connected ? '' : '!';
+  const color = n > 0 ? '#d97706' : yolo || rec ? '#dc2626' : runtime.paused ? '#6b7280' : runtime.connected ? '#16a34a' : '#dc2626';
   try {
     void (api.action as any).setBadgeText({ text });
     void (api.action as any).setBadgeBackgroundColor({ color });
@@ -441,6 +581,21 @@ async function runAction(action: string, rawArgs: Record<string, unknown>, signa
       emitActivity({ action, summary: `Selected tab ${t.id}`, tabId: t.id, outcome: 'ok' });
       return tabInfo(await api.tabs.get(t.id!));
     }
+    case 'tabs_close': {
+      const t = await api.tabs.get(args.tabId).catch(() => { throw new ActionError('TAB_NOT_FOUND', `Tab ${args.tabId} does not exist`); });
+      const openedByAgent = agentTabs.has(t.id!);
+      // The agent may tidy up after itself; closing one of the human's tabs could lose unsaved work, so that asks first.
+      if (!openedByAgent) {
+        const ok = await askApproval(`Close tab “${(t.title ?? '').slice(0, 60) || 'untitled'}”`, `Close a tab the agent did not open (${safeUrl(t.url) || 'browser page'}); anything unsaved in it is lost`, hostOf(t.url), signal);
+        if (!ok) throw new ActionError('APPROVAL_DENIED', 'The human denied this action');
+        assertRunnable();
+      }
+      await api.tabs.remove(t.id!);
+      agentTabs.delete(t.id!);
+      if (runtime.selectedTabId === t.id) runtime.selectedTabId = null;
+      emitActivity({ action, summary: `Closed tab ${t.id} (${hostOf(t.url) || 'browser page'})`, tabId: t.id, outcome: 'ok' });
+      return { closed: true, tabId: t.id, openedByAgent };
+    }
     case 'navigate': return navigate(args, signal);
     case 'screenshot': return screenshot(args, signal);
     case 'downloads': return downloads(args.limit ?? 20);
@@ -448,7 +603,7 @@ async function runAction(action: string, rawArgs: Record<string, unknown>, signa
     case 'pause': setPaused(true, false); return { paused: true };
     case 'resume': setPaused(false, false); return { paused: false };
     case 'status':
-      return { paused: runtime.paused, humanLocked: runtime.humanLocked, yolo: getSettings().yolo, capture: getSettings().capture, pendingApprovals: pendingApprovals.size, selectedTabId: runtime.selectedTabId, browser: browserKind, version: browserVersion(), bodyCaptureAvailable: await bodyCaptureAvailable() };
+      return { paused: runtime.paused, humanLocked: runtime.humanLocked, yolo: getSettings().yolo, capture: getSettings().capture, pendingApprovals: pendingApprovals.size, selectedTabId: runtime.selectedTabId, agentWindow: { enabled: getSettings().agentWindow, open: runtime.agentWindowId !== null }, browser: browserKind, version: browserVersion(), bodyCaptureAvailable: await bodyCaptureAvailable(), bodyCapturePossible: bodyCapturePossible() };
     case 'network_configure': return configureCapture(args);
     case 'request_approval': {
       const ok = await askApproval(args.title, args.detail ?? '', '', signal, Math.min(args.timeoutMs ?? APPROVAL_TIMEOUT_MS, 300_000));
@@ -457,11 +612,27 @@ async function runAction(action: string, rawArgs: Record<string, unknown>, signa
     default: {
       // Operations executed inside the page by the content script.
       const tab = await targetTab(args.tabId);
-      const opMap: Partial<Record<ActionName, string>> = { page_text: 'page_text', dom_snapshot: 'dom_snapshot', interactive_elements: 'interactive_elements', forms: 'forms', click: 'click', type: 'type', fill_field: 'fill_field', select_option: 'select_option', scroll: 'scroll', press_key: 'press_key', wait_for_element: 'wait_for_element', fill_form: 'fill_form', console_errors: 'console_errors' };
+      const opMap: Partial<Record<ActionName, string>> = { page_text: 'page_text', dom_snapshot: 'dom_snapshot', captcha_scan: 'captcha_scan', interactive_elements: 'interactive_elements', forms: 'forms', tables: 'tables', resolve_locator: 'resolve_locator', click: 'click', type: 'type', fill_field: 'fill_field', select_option: 'select_option', scroll: 'scroll', press_key: 'press_key', wait_for_element: 'wait_for_element', fill_form: 'fill_form', console_errors: 'console_errors' };
       const op = opMap[action];
       if (!op) throw new ActionError('UNSUPPORTED', `Action ${action} is not implemented`);
       const { tabId: _t, ...rest } = args;
-      const out = await callContent(tab, op, rest, signal);
+      let out: unknown;
+      if (op === 'resolve_locator') {
+        // A recorded step inside an iframe is looked up in that frame, and its ref is remembered so the next call is routed there.
+        const { frameUrl, ...inner } = rest as { frameUrl?: string };
+        let frameId = 0;
+        if (typeof frameUrl === 'string' && frameUrl) {
+          const hit = (await childFrames(tab.id!)).find((f) => f.url === frameUrl) ?? (await childFrames(tab.id!)).find((f) => f.url.split('#')[0] === frameUrl.split('#')[0]);
+          if (!hit) throw new ActionError('ELEMENT_NOT_FOUND', `The recorded iframe (${frameLabel(frameUrl)}) is not on this page`);
+          frameId = hit.frameId;
+        }
+        const found = (await callContent(tab, op, inner, signal, false, frameId)) as Json;
+        rememberEpoch(String(found.ref ?? '').split(':')[0], tab.id!, frameId);
+        out = found;
+      } else if (['interactive_elements', 'forms', 'page_text', 'tables'].includes(op)) out = await callWithFrames(tab, op, rest, signal);
+      else out = await callContent(tab, op, rest, signal, false, frameFor(tab.id!, rest));
+      // Frames only know their own address; the flow belongs to the page the tab is showing.
+      if (out && typeof out === 'object' && Array.isArray((out as Json)._flow)) for (const part of (out as Json)._flow as Json[]) part.pageUrl = tab.url;
       const mutating = !ACTIONS[action].readOnly;
       if (mutating) emitActivity({ action, summary: `${action} on ${hostOf(tab.url)}${args.ref ? ` (${args.ref})` : ''}`, tabId: tab.id, outcome: 'ok' });
       return out;
@@ -474,9 +645,17 @@ async function navigate(args: Record<string, any>, signal: AbortSignal): Promise
   let tab: chrome.tabs.Tab;
   if (args.url !== undefined) {
     if (!isNavigableUrl(args.url)) throw new ActionError('INVALID_ARGUMENTS', 'Only http(s) URLs can be opened');
-    if (args.newTab) {
-      tab = await api.tabs.create({ url: args.url, active: true });
+    // In agent-window mode a navigation with no tab chosen opens the agent's own window instead of taking over the tab the person is using.
+    const noTarget = args.tabId === undefined && runtime.selectedTabId === null;
+    const w = getSettings().agentWindow ? await liveAgentWindow() : null;
+    const openInAgentWindow = getSettings().agentWindow && (args.newTab || (noTarget && !w?.tabs?.length));
+    if (openInAgentWindow && !w) {
+      tab = await openAgentWindow(args.url);
+      tab = await waitForComplete(tab.id!, timeout, signal, false, 'about:blank');
+    } else if (args.newTab) {
+      tab = await api.tabs.create({ url: args.url, active: true, ...(openInAgentWindow && w ? { windowId: w.id } : {}) });
       runtime.selectedTabId = tab.id!;
+      agentTabs.add(tab.id!);
       tab = await waitForComplete(tab.id!, timeout, signal, false, 'about:blank');
     } else {
       const t = await targetTab(args.tabId);
@@ -557,7 +736,7 @@ async function configureCapture(args: Record<string, any>): Promise<unknown> {
     if (args.captureBodies && !(await bodyCaptureAvailable())) {
       note = isFirefox
         ? 'Response bodies need the optional permissions "webRequestBlocking" and "webRequestFilterResponse". The human must enable them in the BrowserForge popup.'
-        : 'Response bodies need the optional "debugger" permission. The human must enable it in the BrowserForge popup.';
+        : 'Response bodies in Chrome need the "chrome-bodies" build of the extension (it holds the "debugger" permission, which Chrome does not allow as optional). The human must load apps/firefox-extension/dist/chrome-bodies instead of dist/chrome; see docs/INSTALL.md.';
       cap.captureBodies = false;
     } else {
       cap.captureBodies = args.captureBodies;
@@ -569,6 +748,38 @@ async function configureCapture(args: Record<string, any>): Promise<unknown> {
   emitActivity({ action: 'network_configure', summary: `Capture ${cap.enabled ? 'on' : 'off'}, bodies ${cap.captureBodies ? 'on' : 'off'}`, outcome: 'ok' });
   return { capture: cap, note };
 }
+
+// ---------- "Record me": what the person does is relayed from the page to the server ----------
+let humanWindow: number[] = [];
+api.runtime.onMessage.addListener(((msg: any, sender: any) => {
+  if (!msg || msg.kind !== 'bf-human' || !sender?.tab || sender.id !== api.runtime.id) return false;
+  const s = getSettings();
+  // Defence in depth: the page script already checks, but the switch lives here and private windows are never recorded.
+  if (!s.recordHuman || sender.tab.incognito || !runtime.connected) return false;
+  const now = Date.now();
+  humanWindow = humanWindow.filter((t) => now - t < 1000);
+  if (humanWindow.length >= 25) return false; // a person is not that fast; this is a runaway page
+  humanWindow.push(now);
+  const d = msg.data ?? {};
+  const cut = (v: unknown, n: number) => (typeof v === 'string' ? v.slice(0, n) : undefined);
+  const locator: Record<string, string> = {};
+  for (const [k, v] of Object.entries(d.locator ?? {})) if (typeof v === 'string' && v && k.length <= 30) locator[k] = v.slice(0, 600);
+  const table = Array.isArray(d.table) ? d.table.slice(0, 100).map((r: unknown) => String(r).slice(0, 200)) : undefined;
+  const kind = ['click', 'fill', 'select', 'press', 'upload'].includes(d.kind) ? d.kind : undefined;
+  // The server drops a browser that sends it too many malformed messages, so everything is clamped to the protocol's limits here.
+  if (!kind || !cut(d.url, 4000)) return false;
+  send({
+    v: PROTOCOL_VERSION, type: 'event', event: 'human',
+    data: {
+      at: now, tabId: sender.tab.id, kind, url: cut(d.url, 4000), frameUrl: cut(d.frameUrl, 4000), locator, fieldLabel: cut(d.fieldLabel, 120), key: cut(d.key, 30),
+      sensitive: d.sensitive === true || undefined, consequential: d.consequential === true || undefined, custom: d.custom === true || undefined,
+      row: Number.isInteger(d.row) && d.row > 0 && table && d.row <= table.length ? d.row : undefined, table: Number.isInteger(d.row) ? table : undefined,
+      value: s.recordValues && d.sensitive !== true && kind !== 'upload' ? cut(d.value, 5000) : undefined,
+      task: s.recordTask || undefined,
+    },
+  });
+  return false;
+}) as never);
 
 // ---------- popup bridge ----------
 api.runtime.onMessage.addListener(((msg: any, sender: any, sendResponse: (r: unknown) => void) => {
@@ -582,8 +793,8 @@ api.runtime.onMessage.addListener(((msg: any, sender: any, sendResponse: (r: unk
           const s = getSettings();
           return sendResponse({ ok: true, state: {
             connected: runtime.connected, connecting: runtime.connecting, lastError: runtime.lastError, paused: runtime.paused, humanLocked: runtime.humanLocked,
-            yolo: s.yolo, approvalSound: s.approvalSound, serverUrl: s.serverUrl, tokenSet: Boolean(s.token), autoConnect: s.autoConnect, capture: s.capture, browser: browserKind, selectedTabId: runtime.selectedTabId,
-            pendingApprovals: [...pendingApprovals.values()].map(({ resolve: _r, ...p }) => p), activity: activity.slice(-80), bodyCaptureAvailable: await bodyCaptureAvailable(),
+            yolo: s.yolo, approvalSound: s.approvalSound, agentWindow: s.agentWindow, agentWindowOpen: runtime.agentWindowId !== null, recordHuman: s.recordHuman, recordValues: s.recordValues, recordTask: s.recordTask, serverUrl: s.serverUrl, tokenSet: Boolean(s.token), autoConnect: s.autoConnect, capture: s.capture, browser: browserKind, selectedTabId: runtime.selectedTabId,
+            pendingApprovals: [...pendingApprovals.values()].map(({ resolve: _r, ...p }) => p), activity: activity.slice(-80), bodyCaptureAvailable: await bodyCaptureAvailable(), bodyCapturePossible: bodyCapturePossible(),
           } });
         }
         case 'saveSettings': {
@@ -600,6 +811,48 @@ api.runtime.onMessage.addListener(((msg: any, sender: any, sendResponse: (r: unk
         case 'pause': setPaused(true, true); break;
         case 'resume': setPaused(false, true); break;
         case 'setYolo': await saveSettings({ yolo: msg.on === true }); emitActivity({ action: 'yolo', summary: msg.on === true ? 'YOLO mode ON: all approvals auto-pass' : 'YOLO mode off', outcome: msg.on === true ? 'error' : 'ok' }); updateBadge(); break;
+        case 'setAgentWindow': {
+          await saveSettings({ agentWindow: msg.on === true });
+          emitActivity({ action: 'agent_window', summary: msg.on === true ? 'Agent window mode ON: the agent works in its own window' : 'Agent window mode off', outcome: 'ok' });
+          break;
+        }
+        case 'takeOver': {
+          // STOP, then bring the agent's window to the front so the person can carry on by hand; only the popup can hand control back.
+          stopAll(true);
+          const w = await liveAgentWindow();
+          if (w?.id !== undefined) await api.windows.update(w.id, { focused: true }).catch(() => undefined);
+          emitActivity({ action: 'takeover', summary: 'You took over', outcome: 'ok' });
+          break;
+        }
+        case 'askAgent': {
+          // "Ask the agent": tell whichever agent is connected to work on the page the person is looking at. Nothing is done here; the agent decides and still needs approval for consequential steps.
+          if (!runtime.connected) return sendResponse({ ok: false, error: 'Not connected to the server' });
+          if (runtime.paused) return sendResponse({ ok: false, error: runtime.humanLocked ? 'Stopped: hand control back to the agent first' : 'Paused: resume first' });
+          const t = await activeTab();
+          if (t.id === undefined || !/^https?:/.test(t.url ?? '')) return sendResponse({ ok: false, error: 'Open a web page first' });
+          const note = typeof msg.note === 'string' ? msg.note.trim().slice(0, 500) : '';
+          send({ v: PROTOCOL_VERSION, type: 'event', event: 'ask', data: { at: Date.now(), tabId: t.id, url: (t.url ?? '').slice(0, 4000), title: (t.title ?? '').slice(0, 300) || undefined, note: note || undefined } });
+          let host = '';
+          try { host = new URL(t.url ?? '').host; } catch { /* keep empty */ }
+          emitActivity({ action: 'ask_agent', summary: `You asked the agent to work on ${host || 'this page'}`, tabId: t.id, outcome: 'ok' });
+          break;
+        }
+        case 'handBack': setPaused(false, true); emitActivity({ action: 'takeover', summary: 'You handed control back to the agent', outcome: 'ok' }); break;
+        case 'closeAgentWindow': {
+          if (runtime.agentWindowId !== null) await api.windows.remove(runtime.agentWindowId).catch(() => undefined);
+          runtime.agentWindowId = null;
+          break;
+        }
+        case 'setRecord': {
+          const patch: Partial<ReturnType<typeof getSettings>> = {};
+          if (typeof msg.on === 'boolean') patch.recordHuman = msg.on;
+          if (typeof msg.values === 'boolean') patch.recordValues = msg.values;
+          if (typeof msg.task === 'string') patch.recordTask = msg.task.trim().slice(0, 200);
+          const was = getSettings().recordHuman;
+          await saveSettings(patch);
+          if (patch.recordHuman !== undefined && patch.recordHuman !== was) emitActivity({ action: 'record', summary: patch.recordHuman ? `Record me ON${getSettings().recordValues ? ' (typed values kept)' : ''}` : 'Record me off', outcome: 'ok' });
+          break;
+        }
         case 'setSound': await saveSettings({ approvalSound: msg.on === true }); break;
         case 'getHistory': return sendResponse({ ok: true, history: await loadApprovalHistory() });
         case 'clearHistory': await clearApprovalHistory(); break;
@@ -615,7 +868,7 @@ api.runtime.onMessage.addListener(((msg: any, sender: any, sendResponse: (r: unk
           break;
         }
         case 'permissionsChanged': await ensureBodyFiltering(); break;
-        case 'clearActivity': activity.length = 0; break;
+        case 'clearActivity': clearActivity(); break;
         default: return sendResponse({ ok: false, error: 'unknown op' });
       }
       updateBadge();
@@ -652,6 +905,7 @@ try {
 
 void (async () => {
   let s = await loadSettings();
+  await loadActivity();
   if (__E2E__) {
     // Test builds read connection details from a bundled file so automation does not need the popup.
     try {

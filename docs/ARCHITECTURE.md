@@ -46,3 +46,12 @@
 4. Content script resolves the ref/selector; if the element looks consequential it answers `needsApproval`.
 5. Background shows the prompt (badge + popup), waits for the human, then re-invokes the content script with `approved=true` (a flag only the background can set).
 6. Result flows back; the hub resolves the MCP call.
+
+
+## Extensions: flows, plugins and skills
+
+* **Flows** (`packages/flows`, `apps/mcp-server/src/flows`): the content script describes every element an action touched (`computeLocator`: test id, role and name, label, id, CSS, XPath) and returns it in the reply as `_flow`. The hub strips that from what the agent sees and emits `actionDone`; the recorder groups actions per task and site, turns typed values into parameters and writes JSON. Exporters are pure functions over that JSON. `flow_run` replays by asking the content script to `resolve_locator` for each step, then using the normal actions, so approvals still apply.
+* **Plugins** (`packages/plugin-sdk`, `apps/mcp-server/src/plugins`): installed with `npm install --ignore-scripts` into `<config>/plugins/<id>/pkg`, recorded with the permissions the user approved. At startup the loader imports each enabled plugin, refuses it if its manifest permissions differ from what was approved, if a tool name does not start with its prefix or collides, and registers its tools through the same `registerTool` as core tools. Plugins receive only a `PluginApi`: checked files, declared programs, optional browser calls, logging.
+* **Skills** (`apps/mcp-server/src/plugins/skills.ts`, `tools/skills.ts`): folders with `SKILL.md` and workflows, exposed as MCP prompts and `skill_*` tools; workflows run through the existing workflow engine.
+
+None of these can reach the approval gate: it lives in the extension.

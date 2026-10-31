@@ -9,6 +9,9 @@ const alias = {
   '@browserforge/api-analyzer': r('packages/api-analyzer/src/index.ts'),
   '@browserforge/client-generator': r('packages/client-generator/src/index.ts'),
   '@browserforge/knowledge': r('packages/knowledge/src/index.ts'),
+  '@browserforge/flows': r('packages/flows/src/index.ts'),
+  '@browserforge/plugin-sdk/testing': r('packages/plugin-sdk/src/testing.ts'),
+  '@browserforge/plugin-sdk': r('packages/plugin-sdk/src/index.ts'),
 };
 
 export default defineConfig({

@@ -31,9 +31,11 @@ A local-first Firefox + Chrome extension and MCP server for Claude Code, OpenAI 
 
 ## Quick start
 
-Requires Node.js 20 or newer, and Firefox or Chrome.
+Requires Node.js 22 or newer, and Chrome, Edge, Brave or Firefox, on Linux, macOS or Windows (Linux is the one it has been tested on; see [docs/INSTALL.md](docs/INSTALL.md)).
 
 ```bash
+# From the package (no build): npm install -g ./browserforge-mcp-<version>.tgz   then:   browserforge setup
+# From a checkout:
 npm install && npm run build
 node apps/mcp-server/dist/cli.js serve     # prints endpoints, creates tokens in ~/.config/browserforge/
 node apps/mcp-server/dist/cli.js tokens    # shows the extension token
@@ -67,20 +69,63 @@ More end-to-end examples: [docs/WORKFLOWS.md](docs/WORKFLOWS.md).
 
 | Namespace | Tools |
 |---|---|
-| **browser** | `browser_get_tabs`, `browser_get_active_tab`, `browser_select_tab`, `browser_navigate`, `browser_click`, `browser_type`, `browser_fill_field`, `browser_select_option`, `browser_scroll`, `browser_press_key`, `browser_get_page_text`, `browser_get_dom_snapshot`, `browser_get_interactive_elements`, `browser_take_screenshot`, `browser_wait_for_element`, `browser_get_forms`, `browser_fill_form`, `browser_get_downloads`, `browser_get_console_errors`, `browser_pause`, `browser_resume`, `browser_stop` |
+| **browser** | `browser_get_tabs`, `browser_get_active_tab`, `browser_select_tab`, `browser_close_tab`, `browser_navigate`, `browser_click`, `browser_type`, `browser_fill_field`, `browser_select_option`, `browser_scroll`, `browser_press_key`, `browser_get_page_text`, `browser_get_dom_snapshot`, `browser_get_interactive_elements`, `browser_take_screenshot`, `browser_wait_for_element`, `browser_get_forms`, `browser_extract_table`, `browser_verify`, `browser_fill_form`, `browser_get_downloads`, `browser_get_console_errors`, `browser_solve_captcha`, `browser_pending_requests`, `browser_pause`, `browser_resume`, `browser_stop` |
 | **network** | `network_list_requests`, `network_get_request`, `network_get_request_details`, `network_search_requests`, `network_list_captures`, `network_configure_capture`, `network_export_har`, `network_import_har`, `network_clear_capture` |
 | **api** (reverse engineering) | `api_analyze_traffic`, `api_list_endpoints`, `api_get_endpoint_details`, `api_generate_openapi`, `api_generate_client` |
 | **form** | `form_profile_save`, `form_profile_list`, `form_profile_delete`, `form_discover`, `form_fill_from_profile`, `form_validate`, `form_preview_submission`, `form_prepare_cover_letter` |
 | **goal** (optional, local model) | `browser_run_goal`, `browser_goal_feedback` |
 | **knowledge** | `knowledge_add_document`, `knowledge_search`, `knowledge_list`, `knowledge_remove`, `knowledge_export_dataset` |
+| **flows** | `flow_list`, `flow_get`, `flow_save`, `flow_delete`, `flow_record`, `flow_export`, `flow_run`, `flow_consolidate`, `flow_to_skill` |
+| **sites** | `site_info`, `site_note`, `site_list` |
+| **skills** | `skill_list`, `skill_get`, `skill_run_workflow` (plus one prompt per skill) |
+| **plugins** | whatever the plugins you install add, e.g. `cv_*` from the RenderCV plugin |
 | **workflow** | `workflow_create`, `workflow_run`, `workflow_pause`, `workflow_resume`, `workflow_get_status` |
 | **system** | `system_status`, `system_diagnostics` |
 
 Read-only tools carry `readOnlyHint`. Every tool has a strict JSON schema (unknown arguments are rejected) and bounded output.
 
-`browser_run_goal` is an optional fast path: a small **local** model (Ollama, on your machine) picks one routine step at a time from a compact table of the page. It only types values you pass in, never navigates to other sites, and goes through the same approval gate as every other action.
+`browser_run_goal` is an optional fast path: **local** models pick one routine step at a time from a compact table of the page. By default Qwen (via Ollama) decides; `--decider cascade` puts Laya (via [Ollaya](https://github.com/ollaya-dev/ollaya)) first with Qwen as backup. The run hands back to your agent when the models are unsure, and every step says which model decided. It only types values you pass in, never navigates to other sites, and goes through the same approval gate as every other action.
 
 Analysis and code generation themselves are deterministic and use no LLM.
+
+## Every site becomes a flow
+
+BrowserForge records what an agent does on each website as a **flow**: steps, several ways to find each element, and your typed values as named parameters (passwords are never kept). Replay a flow with no model (`flow_run`), or export it as a script for **Playwright** (TypeScript, Python), **Selenium** (Python, Java), **Chrome DevTools Recorder / Puppeteer Replay**, or neutral JSON:
+
+```bash
+browserforge flow list
+browserforge flow export <id> --format playwright-ts --out signup.ts
+FLOW_CONFIRM=1 FLOW_PARAM_FIRST_NAME=Grace npx tsx signup.ts
+```
+
+Exported scripts stop before submits, sends and uploads unless you say `FLOW_CONFIRM=1`, since outside BrowserForge there is no approval prompt. Details: [docs/FLOWS.md](docs/FLOWS.md).
+
+### An agent window, and tables as data
+
+* **Agent window:** turn it on in the popup and the agent works in its own window instead of the tabs you are using; it can still use one of yours when it selects it on purpose. **Take over** stops the agent and shows its window so you can finish by hand; **Hand back** lets it carry on. Details: [docs/AGENT_WINDOW.md](docs/AGENT_WINDOW.md).
+* **Tables:** `browser_extract_table` reads HTML tables and ARIA grids (also inside iframes) as column names and rows, with merged cells expanded, as JSON or CSV (spreadsheet formulas neutralised), or saved to a file so a big table does not fill the agent's context.
+
+### Memory that carries over
+
+* **Site cards:** navigating to a site returns what is known about it (obstacles, past results, flows to replay); agents add to it with `site_note`. See [docs/SITES.md](docs/SITES.md).
+* **Automatic checks:** after a submit, and at the end of `browser_run_goal`, the page is read for a confirmation or an error, and the run is labelled good or bad without waiting for anyone. `browser_verify` does it on demand.
+* **Flows to skills:** `flow_consolidate` merges many recordings of a task into one clean flow, and `flow_to_skill` turns it into a shareable skill that replays with no model.
+* **Record me:** an opt-in popup switch that also records *your own* clicks and fields as a flow and as training examples for the local model. Off by default, passwords never recorded, everything stays on your computer.
+
+## Extend BrowserForge: plugins and skills
+
+Anyone can add to BrowserForge without touching the core:
+
+* **Skills**: a folder with a `SKILL.md` (and optional ready-made workflows). No code; agents read it. `browserforge skill new my-skill`. [docs/SKILLS.md](docs/SKILLS.md)
+* **Plugins**: a small ES module that adds tools, with a manifest of exactly which folders, programs and browser access it needs. You see that list in plain words and approve it before it is installed; a later version asking for more is switched off until you approve again. `browserforge plugin new my-tool`. [docs/PLUGINS.md](docs/PLUGINS.md)
+
+```bash
+browserforge plugin search cv            # npm packages tagged "browserforge-plugin"
+browserforge plugin add ./plugins/rendercv
+browserforge plugin config rendercv cvDir=~/cv rendercv=~/venv/bin/rendercv
+```
+
+The first plugin is [`plugins/rendercv`](plugins/rendercv): tailor a RenderCV resume to each job (reorder and reword only; it rejects any number, link or tool name not already in your CV), render it, and keep an application log. Its companion skill [`skills/job-apply`](skills/job-apply) is a worked example of a skill. Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## How it works
 
@@ -103,7 +148,7 @@ Deeper dive: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/BROWSER_PROTO
 - **Approvals live in the browser.** The agent cannot answer the popup.
 - **Secrets are redacted** from what the agent sees, from exports and from generated code. Revealing them requires starting the daemon with `--allow-reveal`.
 - **Nothing is persisted** unless you export it. Captured traffic stays in memory.
-- **No CAPTCHA or anti-bot bypass**, and no arbitrary-JavaScript tool.
+- **No anti-bot evasion** and no arbitrary-JavaScript tool. CAPTCHA solving exists only as the opt-in `browser_solve_captcha` (local CapSkip app, needs `--capskip` and YOLO mode; see [SECURITY.md](docs/SECURITY.md)).
 
 ## Repository layout
 
@@ -115,9 +160,13 @@ packages/network-inspector capture store, filters, redacted views, HAR
 packages/api-analyzer      traffic to endpoints, schemas, pagination, auth, evidence
 packages/client-generator  OpenAPI 3.1, Python/TS/JS/PHP clients, safe writer, validators
 packages/knowledge         local reference documents (BM25) and run traces
+packages/flows             flow format, builder and exporters (Playwright, Selenium, Chrome Recorder, JSON)
+packages/plugin-sdk        what plugin authors import: manifest, permission-checked api, test helper
+plugins/                   reference plugins (rendercv)
+skills/                    reference skills (job-apply)
 packages/shared            errors, limits, redaction, path safety, tokens, logger
 tests/                     unit · security · integration · e2e (real browsers) · demo site
-docs/  examples/
+docs/  examples/  CONTRIBUTING.md
 ```
 
 ## Development

@@ -28,7 +28,7 @@ Every message has `v` (protocol version, currently `1`) and `type`.
 | server → ext | `request` | `id` (≤100 chars), `action`, `args` (validated), optional `timeoutMs` (soft deadline) |
 | ext → server | `response` | `id`, `ok:true`, `result` — or `ok:false`, `error:{code,message,retryable,details?}` |
 | server → ext | `cancel` | `id` — abandon a request |
-| ext → server | `event` | `event:"network"` (captured exchange) or `event:"activity"` (log line) |
+| ext → server | `event` | `event:"network"` (captured exchange), `event:"activity"` (log line) or `event:"ask"` (the person pressed "Ask the agent": tab, URL, title, optional note) |
 | both | `ping` / `pong` | keep-alive |
 
 Invalid frames are dropped (6 strikes closes the socket). A `response` for an unknown id is ignored.
@@ -43,7 +43,7 @@ Arguments are validated by the server **and again** by the extension. Unknown ar
 | `tabs_select` | | makes the tab the default target |
 | `navigate` | | http(s) only; `history: back/forward/reload`; `newTab` |
 | `click`, `type`, `fill_field`, `select_option`, `scroll`, `press_key` | | target by `ref` (preferred) or `selector` |
-| `page_text`, `dom_snapshot`, `interactive_elements`, `forms`, `console_errors`, `wait_for_element` | ✔ | content is untrusted |
+| `page_text`, `dom_snapshot`, `captcha_scan`, `interactive_elements`, `forms`, `console_errors`, `wait_for_element` | ✔ | content is untrusted |
 | `fill_form` | | label/name/id matching; `files[]`, `submit` need approval |
 | `screenshot` | ✔ | PNG/JPEG, optional full page |
 | `downloads` | ✔ | needs optional `downloads` permission |

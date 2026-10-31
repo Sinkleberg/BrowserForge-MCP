@@ -22,6 +22,7 @@ export const ACTIONS = {
   tabs_list: { readOnly: true, description: 'List open tabs', args: z.object({}) },
   tabs_active: { readOnly: true, description: 'Get the active tab', args: z.object({}) },
   tabs_select: { readOnly: false, description: 'Make a tab the active tab', args: z.object({ tabId: z.number().int().nonnegative() }) },
+  tabs_close: { readOnly: false, description: 'Close a tab (tabs the agent did not open need approval)', args: z.object({ tabId: z.number().int().nonnegative() }) },
   navigate: {
     readOnly: false,
     description: 'Navigate a tab to a URL (http/https only) or go back/forward/reload',
@@ -55,13 +56,25 @@ export const ACTIONS = {
     description: 'Press a key on the focused element',
     args: z.object({ tabId: TabId, ...Target, key: z.string().min(1).max(32), modifiers: KEY_MODIFIERS }),
   },
-  page_text: { readOnly: true, description: 'Visible page text (untrusted content)', args: z.object({ tabId: TabId, maxChars: z.number().int().positive().max(200_000).optional() }) },
+  page_text: { readOnly: true, description: 'Visible page text (untrusted content)', args: z.object({ tabId: TabId, maxChars: z.number().int().positive().max(200_000).optional(), includeFrames: z.boolean().optional() }) },
+  tables: {
+    readOnly: true,
+    description: 'Extract data tables (HTML tables and ARIA grids) as headers and rows (untrusted content)',
+    args: z.object({
+      tabId: TabId,
+      selector: z.string().max(500).optional(),
+      maxRows: z.number().int().positive().max(5000).optional(),
+      includeLinks: z.boolean().optional(),
+      includeFrames: z.boolean().optional(),
+    }),
+  },
   dom_snapshot: {
     readOnly: true,
     description: 'Compact DOM snapshot (untrusted content)',
     args: z.object({ tabId: TabId, maxNodes: z.number().int().positive().max(5_000).optional(), root: z.string().max(500).optional() }),
   },
-  interactive_elements: { readOnly: true, description: 'Interactive elements with refs', args: z.object({ tabId: TabId, limit: z.number().int().positive().max(1000).optional(), visibleOnly: z.boolean().optional(), inViewport: z.boolean().optional(), format: z.enum(['full', 'table']).optional() }) },
+  captcha_scan: { readOnly: true, description: 'Find CAPTCHA widgets (type and site key) on the page (untrusted content)', args: z.object({ tabId: TabId }) },
+  interactive_elements: { readOnly: true, description: 'Interactive elements with refs', args: z.object({ tabId: TabId, limit: z.number().int().positive().max(1000).optional(), visibleOnly: z.boolean().optional(), inViewport: z.boolean().optional(), format: z.enum(['full', 'table']).optional(), includeFrames: z.boolean().optional() }) },
   screenshot: {
     readOnly: true,
     description: 'Screenshot of the visible area',
@@ -73,7 +86,8 @@ export const ACTIONS = {
     args: z.object({ tabId: TabId, ...Target, text: z.string().max(500).optional(), state: z.enum(['present', 'visible', 'hidden', 'absent']).optional(), timeoutMs: z.number().int().positive().max(120_000).optional() })
       .refine((a) => a.ref || a.selector || a.text, { message: 'Provide ref, selector or text' }),
   },
-  forms: { readOnly: true, description: 'Discover forms and fields', args: z.object({ tabId: TabId }) },
+  resolve_locator: { readOnly: true, description: 'Find an element from a recorded flow locator and return a ref', args: z.object({ tabId: TabId, locator: z.record(z.string(), z.unknown()), frameUrl: z.string().max(2000).optional() }) },
+  forms: { readOnly: true, description: 'Discover forms and fields', args: z.object({ tabId: TabId, includeFrames: z.boolean().optional() }) },
   fill_form: {
     readOnly: false,
     description: 'Fill multiple fields of a form by label/name/id; optional file attachments',

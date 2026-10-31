@@ -1,0 +1,24 @@
+{
+  "name": "@browserforge/plugin-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Build plugins and skills for BrowserForge MCP",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    }
+  },
+  "dependencies": {
+    "@browserforge/flows": "*",
+    "@browserforge/shared": "*",
+    "zod": "4.6.7"
+  }
+}

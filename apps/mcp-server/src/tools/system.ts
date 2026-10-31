@@ -15,7 +15,8 @@ export function systemStatus(ctx: ServerContext) {
     browsers,
     connected: browsers.some((b) => b.connected),
     capture: { captures: ctx.store.listCaptures(), limits: ctx.store.getLimits() },
-    decider: { url: ctx.config.decider.url, model: ctx.config.decider.model, traces: ctx.config.knowledge.traces },
+    decider: { mode: ctx.config.decider.mode, qwen: `${ctx.config.decider.model} @ ${ctx.config.decider.url}`, laya: `${ctx.config.decider.laya.model} @ ${ctx.config.decider.laya.url}`, traces: ctx.config.knowledge.traces },
+    plugins: { loaded: ctx.plugins.plugins.map((p) => ({ id: p.manifest.id, version: p.version, tools: p.tools.map((t) => t.name) })), skills: ctx.plugins.skills.map((s) => s.name), skipped: ctx.plugins.skipped },
     policy: { allowReveal: ctx.config.allowReveal, uploadRoots: ctx.config.uploadRoots, writeRoots: ctx.config.writeRoots },
     howToConnect: browsers.length ? undefined : `Install the BrowserForge extension, open its popup, paste the token from ${path.join(ctx.config.configDir, 'extension-token')} and press Connect (server ws://${ctx.config.host}:${ctx.config.port}/ext).`,
   };
@@ -61,6 +62,7 @@ export function registerSystemTools(server: McpServer, ctx: ServerContext): void
       return {
         checks,
         recentErrors: ctx.hub.recentErrors.slice(-20),
+        logs: ctx.logFile ? { file: ctx.logFile.current(), dir: ctx.logFile.dir, retentionDays: ctx.config.logging.retentionDays, readWith: 'browserforge logs --tail 100 --level warn' } : { file: null, hint: 'File logging is off (started with --no-log-file).' },
         activity,
         runtime: { node: process.version, platform: process.platform, rssMB: Math.round(process.memoryUsage().rss / 1048576) },
         workflows: ctx.workflows.list().length,

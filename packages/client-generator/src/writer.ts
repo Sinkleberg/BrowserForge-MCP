@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { BrowserForgeError, containsStrongSecret, resolveSafePath } from '@browserforge/shared';
+import { BrowserForgeError, containsStrongSecret, minimalEnv, resolveSafePath } from '@browserforge/shared';
 import { GENERATED_MARKER, type GeneratedClient } from './params.js';
 
 export interface CheckResult { name: string; status: 'passed' | 'failed' | 'skipped'; output: string }
@@ -29,7 +29,7 @@ export function scanForSecrets(files: Record<string, string>, forbidden: string[
 
 function run(cmd: string[], cwd: string, timeoutMs: number): Promise<CheckResult & { name: string }> {
   return new Promise((resolve) => {
-    execFile(cmd[0]!, cmd.slice(1), { cwd, timeout: timeoutMs, maxBuffer: 2_000_000, env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', LANG: 'C.UTF-8' } }, (err, stdout, stderr) => {
+    execFile(cmd[0]!, cmd.slice(1), { cwd, timeout: timeoutMs, maxBuffer: 2_000_000, env: minimalEnv() }, (err, stdout, stderr) => {
       const output = `${stdout}${stderr}`.trim().slice(-3000);
       if (err && (err as NodeJS.ErrnoException).code === 'ENOENT') return resolve({ name: cmd[0]!, status: 'skipped', output: `${cmd[0]} is not installed` });
       resolve({ name: cmd.join(' '), status: err ? 'failed' : 'passed', output });

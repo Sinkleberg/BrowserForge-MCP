@@ -11,7 +11,7 @@ afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 const step = (over: Partial<TraceStep> = {}, runId = 'run1'): TraceStep => ({
   runId, at: Date.now(), promptVersion: 'v1', host: 'example.com', pathPattern: '/signup', goal: 'Sign up', inputKeys: ['birth month'],
-  table: ['1 | combobox | Select Month', '2 | button | Submit'], recent: [],
+  table: ['1 | combobox | Select Month', '2 | button | Submit'], recent: [], notesKey: '',
   decision: { op: 'SELECT', target: 1, targetLabel: 'Select Month', inputKey: 'birth month', confidence: 0.9 },
   result: { ok: true, pageChanged: true, approvalDenied: false }, source: 'model', ...over,
 });
@@ -55,13 +55,14 @@ describe('trace store', () => {
 
   it('remembers a decision only after it succeeded the same way several times, and forgets it when labelled bad', () => {
     const store = new TraceStore(dir);
-    const key = { host: 'example.com', pathPattern: '/signup', goal: 'Sign   up', table: ['1 | combobox | Select Month', '2 | button | Submit'] };
+    const key = { host: 'example.com', pathPattern: '/signup', goal: 'Sign   up', table: ['1 | combobox | Select Month', '2 | button | Submit'], notesKey: '' };
     store.record(step({}, 'r1')); store.record(step({}, 'r2'));
     expect(store.remembered(key)).toBeNull();
     store.record(step({}, 'r3'));
     expect(store.remembered(key)).toMatchObject({ op: 'SELECT', targetLabel: 'Select Month', inputKey: 'birth month' });
     store.label('r1', 'bad');
     expect(store.remembered(key)).toBeNull();
+    expect(stateKey({ ...key, notesKey: 'abc12345' })).not.toBe(stateKey(key)); // a confirmation on the page is a different situation
     expect(stateKey(key)).toBe(stateKey({ ...key, table: [...key.table].reverse() })); // order independent
   });
 

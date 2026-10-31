@@ -27,6 +27,17 @@ Claude Code supports Streamable HTTP MCP servers with custom headers.
 claude mcp add browserforge -- node /path/to/browserforge/apps/mcp-server/dist/cli.js stdio
 ```
 
+## "Ask the agent" button
+
+The extension popup has a button, **Ask the agent to fill this page** (with an optional note). It tells the connected agent which tab you are looking at; it does nothing to the page itself, and submits, sends and payments still need your approval.
+
+An MCP server cannot start a Claude Code turn on its own, so the request waits on the server until the agent picks it up. Two ways:
+
+1. **Tell Claude** ("I pressed the button"). It calls `browser_pending_requests`, which returns the tab and your note, and works on that tab.
+2. **Let Claude watch.** Ask Claude Code once: *"Run `browserforge watch` with the Monitor tool and act on each ASK line."* The command prints one line per press (`ASK #3 tab 42 note: ...`), which wakes Claude, and Claude then calls `browser_pending_requests`. It only prints the id, tab and your own note, never page text.
+
+Requests are kept in memory (the last 30) and are lost when the daemon restarts. Reload the extension after updating so the popup shows the button.
+
 ## Verified
 
 With `claude -p … --mcp-config .mcp.json --strict-mcp-config --allowedTools mcp__browserforge__system_status` (Claude Code 2.1.310) the server was discovered and `system_status` returned `server=browserforge-mcp version=0.1.0`.

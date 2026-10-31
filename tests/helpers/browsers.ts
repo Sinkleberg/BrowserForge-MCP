@@ -10,6 +10,11 @@ export interface BrowserHandle {
   openPage(url: string): Promise<unknown>;
   /** Evaluate JS in the page context of the most recently opened page (test-side inspection only). */
   evalInPage<T>(script: string): Promise<T>;
+  /** Do something the way a person does, with real (trusted) browser input events, in the most recently opened page. */
+  userFill(css: string, text: string): Promise<void>;
+  userClick(css: string): Promise<void>;
+  /** Choose the LAST option of a <select> (End key on Chromium, a click on Firefox): one trusted change event either way. */
+  userPickLast(css: string): Promise<void>;
   /** Open the extension popup in a tab, press Approve/Deny on the first pending approval, and return the prompt text. */
   decideApproval(approve: boolean): Promise<string>;
   /** Text and state of the popup (status line, activity). */
@@ -82,6 +87,9 @@ export async function launchFirefox(app: App): Promise<BrowserHandle> {
       await driver.get(url);
     },
     evalInPage: async (script) => (await driver.executeScript(`return (function(){${script}})()`)) as never,
+    userFill: async (css, text) => { await driver.findElement(By.css(css)).sendKeys(text); },
+    userClick: async (css) => { await driver.findElement(By.css(css)).click(); },
+    userPickLast: async (css) => { await (await driver.findElement(By.css(css))).findElement(By.xpath('.//option[last()]')).click(); },
     close: async () => {
       await driver.quit().catch(() => undefined);
       fs.rmSync(extDir, { recursive: true, force: true });
@@ -156,6 +164,9 @@ export async function launchChromium(app: App): Promise<BrowserHandle> {
       await last!.goto(url);
     },
     evalInPage: async (script) => (await last!.evaluate(`(function(){${script}})()`)) as never,
+    userFill: async (css, text) => { await last!.click(css); await last!.keyboard.type(text); },
+    userClick: async (css) => { await last!.click(css); },
+    userPickLast: async (css) => { await last!.focus(css); await last!.keyboard.press('End'); },
     close: async () => {
       await ctx.close().catch(() => undefined);
       fs.rmSync(extDir, { recursive: true, force: true });
