@@ -18,7 +18,8 @@
 - [ ] Grep the tree and the zips for secrets: `rg -n "eyJ|sk-|Bearer [A-Za-z0-9]" --glob '!tests/**'`
 - [ ] Update version in the root `package.json`, `apps/*/package.json`, `SERVER_VERSION` in `apps/mcp-server/src/context.ts`, `EXT_VERSION` in `apps/firefox-extension/src/background.ts`
 - [ ] Re-read `docs/LIMITATIONS.md` and `docs/SECURITY.md` for anything that changed
-- [ ] Tag the release; attach both zips
+- [ ] Tag the release; attach the zips
+- [ ] Store uploads use the `*-store-*.zip` files (no manifest `key`); listing text and permission justifications are in [STORE_LISTING.md](STORE_LISTING.md), the privacy policy in [PRIVACY.md](PRIVACY.md)
 
 ## Building and checking the package
 

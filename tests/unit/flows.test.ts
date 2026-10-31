@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BUILTIN_EXPORTERS, FlowBuilder, getExporter, looksGeneratedId, looksSensitive, paramName, parseFlow, playwrightCandidates, replaySelectors, seleniumCandidates, type Flow } from '@browserforge/flows';
+import { fillWorkflow } from '../../apps/mcp-server/src/plugins/skills.js';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 let tmp: string;
@@ -89,7 +90,8 @@ describe('exporters', () => {
   });
 
   it('never embed sensitive values and only embed defaults when asked', () => {
-    for (const e of BUILTIN_EXPORTERS) {
+    // (Chrome Recorder refuses this sample's iframe and upload steps; its own test checks the same rules.)
+    for (const e of BUILTIN_EXPORTERS.filter((x) => x.format !== 'puppeteer-replay')) {
       expect(e.generate(flow, { includeDefaults: true })).not.toContain('S3cret');
       if (e.format !== 'json' && e.format !== 'puppeteer-replay') {
         expect(e.generate(flow, { includeDefaults: false })).not.toContain('"Ada"');
@@ -114,14 +116,60 @@ describe('exporters', () => {
     expect(gen('playwright-ts')).toContain("getByRole('option'");
   });
 
-  it('Chrome Recorder JSON has the expected step types and selectors', () => {
-    const j = JSON.parse(gen('puppeteer-replay', true));
+  it('comments cannot be broken out of by names or labels with line breaks (or Java unicode escapes)', () => {
+    const evil = sample();
+    evil.name = 'x\nimport os; os.system("boom")\r\u2028y';
+    evil.steps[1]!.label = 'a\nboom()\n// \\u000a boom2()';
+    for (const e of BUILTIN_EXPORTERS.filter((x) => !['json', 'puppeteer-replay'].includes(x.format))) {
+      const code = e.generate(evil, { includeDefaults: false });
+      const lines = code.split(/\r\n|\r|\n|\u2028|\u2029/);
+      // The text is still there, but only inside comments or string literals: no line starts with the injected code.
+      expect(lines.some((l) => /^\s*(\/\/|#).*import os; os\.system/.test(l)), e.format).toBe(true);
+      for (const l of lines) expect(l.trim(), e.format).not.toMatch(/^(boom|import os; os\.system)/);
+      // In a comment Java would decode \u000a into a line break; inside a string literal it is already escaped ("\\u000a").
+      for (const l of lines.filter((x) => /^\s*(\/\/|#)/.test(x))) expect(l, e.format).not.toContain('\\u000a');
+    }
+  });
+
+  it('Chrome Recorder JSON has the expected step types and selectors, and embeds values only when asked', () => {
+    const b = new FlowBuilder({ id: 'f2', site: 'example.test', name: 'Plain' });
+    b.navigate('https://example.test/signup');
+    b.add({ action: 'fill', value: 'Ada', fieldLabel: 'First name', locator: { tag: 'input', label: 'First name', css: '#first' } });
+    b.add({ action: 'fill', value: 'S3cret!', fieldLabel: 'Password', sensitive: true, locator: { tag: 'input', css: 'input[name=pw]' } });
+    b.add({ action: 'select', value: 'Italy', fieldLabel: 'Country', custom: true, locator: { tag: 'div', role: 'combobox', name: 'Country', css: '#country' } });
+    b.add({ action: 'click', consequential: true, locator: { tag: 'button', role: 'button', name: 'Submit', text: 'Submit', testId: 'submit-btn', css: 'button.go', xpath: '/html/body/button' } });
+    b.add({ action: 'press', key: 'Enter', locator: { tag: 'input', css: '#first' } });
+    const plain = b.flow;
+    const rec = getExporter('puppeteer-replay')!;
+
+    const j = JSON.parse(rec.generate(plain, { includeDefaults: true }));
     expect(j.steps[0].type).toBe('setViewport');
     expect(j.steps.map((s: any) => s.type)).toEqual(expect.arrayContaining(['navigate', 'change', 'click', 'keyDown', 'keyUp']));
     const click = j.steps.find((s: any) => s.type === 'click' && JSON.stringify(s).includes('Submit'));
     expect(click.selectors.length).toBeGreaterThan(2);
     expect(j.title).toMatch(/consequential/);
     expect(JSON.stringify(j)).not.toContain('S3cret');
+    // A custom dropdown is the opener click followed by the option click.
+    const opt = j.steps.findIndex((s: any) => s.selectors?.[0]?.[0] === 'aria/Italy[role="option"]');
+    expect(opt).toBeGreaterThan(0);
+    expect(JSON.stringify(j.steps[opt - 1].selectors)).toContain('Country');
+
+    // Defaults are opt-in like every other exporter: with no options nothing recorded is embedded...
+    const noCustom = { ...plain, steps: plain.steps.filter((s) => !s.custom) };
+    expect(rec.generate(noCustom)).not.toContain('Ada');
+    // ...and a custom dropdown, which needs its option text, is refused rather than exported half done.
+    expect(() => rec.generate(plain)).toThrow(/custom dropdown.*includeDefaults/);
+    // Uploads and iframe steps cannot be represented in this format: refused with a pointer to the ones that can.
+    expect(() => gen('puppeteer-replay', true)).toThrow(/iframe.*playwright-ts/);
+    const up = new FlowBuilder({ id: 'f3', site: 'example.test', name: 'Up' });
+    up.add({ action: 'upload', value: '/tmp/cv.pdf', fieldLabel: 'CV', url: 'https://example.test/a', locator: { tag: 'input', css: 'input[type=file]' } });
+    expect(() => rec.generate(up.flow, { includeDefaults: true })).toThrow(/uploads a file.*selenium/);
+  });
+
+  it('skill placeholders accept parameter names that start with a digit', () => {
+    expect(paramName('2nd address line', 'x')).toBe('2nd_address_line');
+    const steps = fillWorkflow({ name: 'w', inputs: { '2nd_address_line': { description: 'd' } }, steps: [{ tool: 'flow_run', args: { params: { '2nd_address_line': '{{2nd_address_line}}' } } }] }, { '2nd_address_line': 'Flat 4' });
+    expect(steps[0]!.args).toEqual({ params: { '2nd_address_line': 'Flat 4' } });
   });
 
   it('neutral JSON round-trips through parseFlow', () => {

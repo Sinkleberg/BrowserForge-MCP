@@ -8,8 +8,8 @@
 You need [Node.js 22 or newer](https://nodejs.org) and Chrome, Edge, Brave or Firefox.
 
 ```bash
-# the package is a single tarball built by `npm run release` (see docs/RELEASE_CHECKLIST.md); once published: npm install -g browserforge-mcp
-npm install -g ./browserforge-mcp-0.1.0.tgz
+npm install -g browserforge-mcp
+# or the tarball from https://github.com/zoghlamimostafa/BrowserForge-MCP/releases: npm install -g ./browserforge-mcp-0.1.0.tgz
 browserforge setup
 ```
 

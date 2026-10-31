@@ -1,5 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import fs from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
+import { parseFlow } from '@browserforge/flows';
 import { BrowserForgeError } from '@browserforge/shared';
 import type { ServerContext } from '../context.js';
 import { fillWorkflow } from '../plugins/skills.js';
@@ -11,6 +14,30 @@ const NOTICE =
 
 function missing(ctx: ServerContext, s: Skill): string[] {
   return [...s.requiresTools.filter((t) => !ctx.tools.has(t)).map((t) => `tool ${t}`), ...s.requiresPlugins.filter((p) => !ctx.plugins.plugins.some((l) => l.manifest.id === p)).map((p) => `plugin ${p}`)];
+}
+
+/**
+ * A skill made by flow_to_skill carries its flow as flow.json, because the id in its flow_run step exists only on the computer that recorded
+ * it. Before running, add that copy to this computer's flows when the id is not already known here.
+ */
+function adoptBundledFlows(ctx: ServerContext, s: Skill, steps: Skill['workflows'][string]['steps']): void {
+  const file = path.join(s.dir, 'flow.json');
+  for (const step of steps) {
+    const id = step.args.id;
+    if (step.tool !== 'flow_run' || typeof id !== 'string' || ctx.flows.get(id) || !fs.existsSync(file)) continue;
+    let flow;
+    try {
+      flow = parseFlow(JSON.parse(fs.readFileSync(file, 'utf8')));
+    } catch (e) {
+      throw new BrowserForgeError('INVALID_ARGUMENTS', `The skill's flow.json is not a valid flow: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (flow.id !== id) throw new BrowserForgeError('INVALID_ARGUMENTS', `The skill's flow.json is flow '${flow.id}', but its workflow runs '${id}'`);
+    try {
+      ctx.flows.adopt(flow);
+    } catch {
+      throw new BrowserForgeError('INVALID_ARGUMENTS', `The skill's flow has an invalid id '${id}'`);
+    }
+  }
 }
 
 export function registerSkillTools(server: McpServer, ctx: ServerContext): void {
@@ -51,6 +78,7 @@ export function registerSkillTools(server: McpServer, ctx: ServerContext): void 
       } catch (e) {
         throw new BrowserForgeError('INVALID_ARGUMENTS', e instanceof Error ? e.message : String(e));
       }
+      adoptBundledFlows(ctx, s, steps);
       const created = ctx.workflows.create(`${skill}/${workflow}`, steps);
       const st = ctx.workflows.run(created.id);
       return { workflowId: st.id, status: st.status, steps: st.steps.length };

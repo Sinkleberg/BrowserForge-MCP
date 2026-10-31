@@ -115,5 +115,16 @@ if (process.argv.includes('--package')) {
   for (const t of ['firefox', 'chrome', 'chrome-bodies']) {
     execFileSync(process.execPath, [webext, 'build', '--source-dir', path.join(dist, t), '--artifacts-dir', art, '--filename', `browserforge-${t}-${VERSION}.zip`, '--overwrite-dest'], { stdio: 'inherit' });
   }
+  // The Chrome Web Store refuses a manifest with a "key" (the store assigns its own ID), so the store uploads are built from copies without it.
+  // The unpacked builds keep the key so "Load unpacked" always gets the same ID.
+  for (const t of ['chrome', 'chrome-bodies']) {
+    const storeDir = path.join(dist, `${t}-store`);
+    fs.rmSync(storeDir, { recursive: true, force: true });
+    fs.cpSync(path.join(dist, t), storeDir, { recursive: true });
+    const m = JSON.parse(fs.readFileSync(path.join(storeDir, 'manifest.json'), 'utf8'));
+    delete m.key;
+    fs.writeFileSync(path.join(storeDir, 'manifest.json'), JSON.stringify(m, null, 2));
+    execFileSync(process.execPath, [webext, 'build', '--source-dir', storeDir, '--artifacts-dir', art, '--filename', `browserforge-${t}-store-${VERSION}.zip`, '--overwrite-dest'], { stdio: 'inherit' });
+  }
   console.log(`packages written to ${art}`);
 }

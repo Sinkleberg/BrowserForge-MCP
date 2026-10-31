@@ -61,7 +61,14 @@ describe.skipIf(!available).each(kinds)('browser_run_goal with a local model —
       const first = await Promise.race([browser.decideApproval(true), run.then((r) => new Error('run ended early: ' + JSON.stringify(r.data?.data ?? r.data)))]);
       if (process.env.BF_DEBUG) console.log('APPROVAL', Date.now() - t0, typeof first === 'string' ? first.slice(0, 80) : first);
       if (first instanceof Error) throw first;
-      const r = await Promise.race([run, new Promise<never>((_, rej) => setTimeout(async () => rej(new Error('STALLED ' + JSON.stringify(await browser.popupSnapshot()))), 20_000))]);
+      // Cleared once the race settles, so a finished run never snapshots the popup later; a failed snapshot still rejects with STALLED.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const stalled = new Promise<never>((_, rej) => {
+        timer = setTimeout(() => {
+          browser.popupSnapshot().then((snap) => rej(new Error('STALLED ' + JSON.stringify(snap))), (e) => rej(new Error('STALLED (no popup snapshot: ' + String(e) + ')')));
+        }, 20_000);
+      });
+      const r = await Promise.race([run, stalled]).finally(() => clearTimeout(timer));
       expect(r.isError).toBe(false);
       return r.data.data as { steps: { source: string }[]; stats: { modelCalls: number; memoryHits: number } };
     };

@@ -66,7 +66,7 @@ export function fillWorkflow(wf: SkillWorkflow, inputs: Record<string, string>):
     if (v !== undefined) values[k] = v;
   }
   const sub = (v: unknown): unknown => {
-    if (typeof v === 'string') return v.replace(/\{\{\s*([A-Za-z][\w-]*)\s*\}\}/g, (_m, k: string) => (k in values ? values[k]! : `{{${k}}}`));
+    if (typeof v === 'string') return v.replace(/\{\{\s*(\w[\w-]*)\s*\}\}/g, (_m, k: string) => (k in values ? values[k]! : `{{${k}}}`));
     if (Array.isArray(v)) return v.map(sub);
     if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, sub(x)]));
     return v;

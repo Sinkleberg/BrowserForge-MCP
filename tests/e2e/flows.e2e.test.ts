@@ -133,9 +133,10 @@ describe.each(kinds)('flows: record, replay and export — %s', (kind) => {
     const run = await ok('flow_run', { id: list[0].id, params: { frame_email: 'a@x.test', frame_email_2: 'b@x.test' } });
     expect(run).toMatchObject({ ok: true });
     expect(await browser.evalInPage<any[]>('return window.__msgs')).toEqual([{ email: 'a@x.test' }, { email: 'b@x.test' }]);
-    // Chrome Recorder JSON for the same flow.
-    const rec = JSON.parse((await ok('flow_export', { id: list[0].id, format: 'puppeteer-replay', path: path.join(stack.home, 'exports', 'frames.json') })).code);
-    expect(rec.steps.some((s: any) => s.type === 'change')).toBe(true);
+    // Chrome Recorder JSON cannot address an iframe by its address, so it refuses instead of replaying in the wrong document.
+    const rec = await stack.call('flow_export', { id: list[0].id, format: 'puppeteer-replay', path: path.join(stack.home, 'exports', 'frames.json') });
+    expect(rec.data.error.code).toBe('INVALID_ARGUMENTS');
+    expect(rec.data.error.message).toMatch(/iframe.*playwright-ts/);
   });
 
   it('refuses unknown formats, path escapes and bad ids; recording can be switched off', async () => {
