@@ -2,9 +2,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { parseFlow } from '@browserforge/flows';
+import { parseFlow, type Flow } from '@browserforge/flows';
 import { BrowserForgeError } from '@browserforge/shared';
 import type { ServerContext } from '../context.js';
+import { valueFree } from '../flows/skill.js';
 import { fillWorkflow } from '../plugins/skills.js';
 import type { Skill } from '../plugins/types.js';
 import { registerTool } from './helpers.js';
@@ -16,25 +17,43 @@ function missing(ctx: ServerContext, s: Skill): string[] {
   return [...s.requiresTools.filter((t) => !ctx.tools.has(t)).map((t) => `tool ${t}`), ...s.requiresPlugins.filter((p) => !ctx.plugins.plugins.some((l) => l.manifest.id === p)).map((p) => `plugin ${p}`)];
 }
 
+/** JSON with object keys sorted, so two flows compare equal whatever order their fields were written in. */
+const canonical = (v: unknown): string =>
+  JSON.stringify(v, (_k, x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
+const shape = (f: Flow) => canonical({ site: f.site, params: f.params, steps: f.steps });
+
 /**
  * A skill made by flow_to_skill carries its flow as flow.json, because the id in its flow_run step exists only on the computer that recorded
- * it. Before running, add that copy to this computer's flows when the id is not already known here.
+ * it. Before running, add that copy to this computer's flows. Ids are a site and a timestamp, so another computer can hold a different flow
+ * under the same id: then the local one must be the same flow (compared without values), or the run is refused rather than replaying it.
  */
 function adoptBundledFlows(ctx: ServerContext, s: Skill, steps: Skill['workflows'][string]['steps']): void {
   const file = path.join(s.dir, 'flow.json');
   for (const step of steps) {
     const id = step.args.id;
-    if (step.tool !== 'flow_run' || typeof id !== 'string' || ctx.flows.get(id) || !fs.existsSync(file)) continue;
-    let flow;
+    if (step.tool !== 'flow_run' || typeof id !== 'string' || !fs.existsSync(file)) continue;
+    let flow: Flow;
     try {
       flow = parseFlow(JSON.parse(fs.readFileSync(file, 'utf8')));
     } catch (e) {
       throw new BrowserForgeError('INVALID_ARGUMENTS', `The skill's flow.json is not a valid flow: ${e instanceof Error ? e.message : String(e)}`);
     }
     if (flow.id !== id) throw new BrowserForgeError('INVALID_ARGUMENTS', `The skill's flow.json is flow '${flow.id}', but its workflow runs '${id}'`);
+    const local = ctx.flows.get(id);
+    if (local) {
+      let same = false;
+      try {
+        same = shape(valueFree(local)) === shape(valueFree(flow));
+      } catch {
+        /* a local flow that cannot be made value-free is not the skill's flow */
+      }
+      if (!same) throw new BrowserForgeError('INVALID_ARGUMENTS', `This computer has a different flow with the id '${id}' than skill '${s.name}' brings. Delete or re-record one of them (flow_delete), then run the skill again.`);
+      continue;
+    }
     try {
       ctx.flows.adopt(flow);
-    } catch {
+    } catch (e) {
+      if (e instanceof BrowserForgeError) throw e;
       throw new BrowserForgeError('INVALID_ARGUMENTS', `The skill's flow has an invalid id '${id}'`);
     }
   }

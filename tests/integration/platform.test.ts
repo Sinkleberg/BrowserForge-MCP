@@ -158,6 +158,16 @@ describe('flows to workflows', () => {
     expect(done2.status).toBe('completed');
     expect(requests.filter((r) => r.action === 'fill_field').map((r) => r.args.value)).toEqual(['other@example.com', 'pw-2']);
     expect(stack.app.ctx.flows.get(merged.id)!.params.every((p) => p.default === undefined)).toBe(true);
+
+    // A different local flow under the same id (ids are site + second, so another computer can have one) is not replayed in its place.
+    const adopted = stack.app.ctx.flows.get(merged.id)!;
+    stack.app.ctx.flows.delete(merged.id);
+    stack.app.ctx.flows.adopt({ ...adopted, steps: adopted.steps.slice(0, 1) });
+    requests.length = 0;
+    const clash = await stack.call('skill_run_workflow', { skill: 'shop-signup', workflow: 'run', inputs: { email: 'x@example.com', password: 'pw-3' } });
+    expect(clash.isError).toBe(true);
+    expect(clash.data.error.message).toMatch(/different flow with the id/);
+    expect(requests).toEqual([]);
   });
 
   it('refuses to merge a single recording or a missing id', async () => {

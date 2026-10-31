@@ -60,6 +60,11 @@ describe('FlowBuilder', () => {
     expect(parseFlow(JSON.parse(JSON.stringify(sample()))).site).toBe('example.test');
     expect(() => parseFlow({ version: 2 })).toThrow(/version 1/);
     expect(() => parseFlow({ ...sample(), steps: [{ action: 'explode' }] })).toThrow(/Unknown step action/);
+    // Listing sorts by createdAt and shows the name, so a flow without them is refused instead of breaking flow_list later.
+    expect(() => parseFlow({ ...sample(), createdAt: undefined })).toThrow(/createdAt/);
+    expect(() => parseFlow({ ...sample(), createdAt: 42 })).toThrow(/createdAt/);
+    expect(() => parseFlow({ ...sample(), createdAt: 'yesterday-ish' })).toThrow(/createdAt/);
+    expect(() => parseFlow({ ...sample(), name: undefined })).toThrow(/name/);
   });
 });
 
@@ -164,6 +169,17 @@ describe('exporters', () => {
     const up = new FlowBuilder({ id: 'f3', site: 'example.test', name: 'Up' });
     up.add({ action: 'upload', value: '/tmp/cv.pdf', fieldLabel: 'CV', url: 'https://example.test/a', locator: { tag: 'input', css: 'input[type=file]' } });
     expect(() => rec.generate(up.flow, { includeDefaults: true })).toThrow(/uploads a file.*selenium/);
+  });
+
+  it('a flow name cannot become a Python encoding declaration (PEP 263)', () => {
+    const evil = sample();
+    evil.name = 'x -*- coding: unicode_escape -*- \\x0aboom()';
+    const pep263 = /^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)/;
+    for (const f of ['playwright-py', 'selenium-py']) {
+      const [l1, l2] = getExporter(f)!.generate(evil, {}).split('\n');
+      expect(pep263.test(l1!), f).toBe(false);
+      expect(pep263.test(l2!), f).toBe(false);
+    }
   });
 
   it('skill placeholders accept parameter names that start with a digit', () => {

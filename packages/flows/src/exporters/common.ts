@@ -23,12 +23,16 @@ export function defaultsOf(flow: Flow, opts?: ExportOptions): Record<string, str
 
 /**
  * Text that is safe inside a one-line `//` or `#` comment: line breaks and other control or separator characters become spaces, so
- * recorded names and labels cannot end the comment and become code. Java decodes `\uXXXX` before parsing, even in comments, so the
- * backslash of `\u` is split off as well.
+ * recorded names and labels cannot end the comment and become code. Two languages read comments before parsing code: Java decodes
+ * `\uXXXX` everywhere, so the backslash of `\u` is split off; Python takes `coding:` / `coding=` in the first two lines as the file's
+ * encoding (PEP 263; `unicode_escape` would turn `\x0a` into a line break), so the word is split from its `:` or `=`.
  */
 export const oneLine = (s: string): string =>
-  // eslint-disable-next-line no-control-regex
-  s.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\\(?=u)/gi, '\\ ');
+  s
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')
+    .replace(/\\(?=u)/gi, '\\ ')
+    .replace(/(coding)(?=[:=])/gi, '$1 ');
 
 export function header(flow: Flow, comment: string): string {
   const consequential = flow.steps.filter((s) => s.consequential).length;

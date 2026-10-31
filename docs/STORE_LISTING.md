@@ -31,7 +31,7 @@ The text submitted to addons.mozilla.org (AMO) and the Chrome Web Store, kept he
 > • A red STOP button halts every agent action until you resume.
 > • Every decision is kept in an approval history you can export.
 >
-> Local only: the extension talks to the BrowserForge program on 127.0.0.1 and refuses any other address. There are no BrowserForge servers, accounts or telemetry. Secrets (cookies, authorization headers, tokens) are masked before anything reaches the agent.
+> Local only: the extension talks to the BrowserForge program on 127.0.0.1 and refuses any other address. There are no BrowserForge servers, accounts or telemetry. By default, secrets (cookies, authorization headers, tokens) are masked before anything reaches the agent; showing them takes an explicit opt-in when you start the program.
 >
 > For developers: capture a site's traffic and get its endpoints, an OpenAPI 3.1 spec and ready-to-use API clients; record what the agent did as a replayable flow and export it to Playwright, Selenium or Chrome Recorder.
 >
@@ -66,6 +66,6 @@ Chrome bodies build: append
 
 > BrowserForge is the browser half of an open-source MCP server (https://github.com/zoghlamimostafa/BrowserForge-MCP). It connects only to `ws://127.0.0.1` / `ws://localhost` (see `src/background.ts`, the URL is checked before connecting) and authenticates with a token the local program generates. It evaluates no remote or agent-supplied code; page interaction is plain DOM operations from the content script.
 >
-> The JavaScript is bundled (not minified) with esbuild. To rebuild from the attached source zip: Node 22, then `npm ci && npm run build -w @browserforge/extension`; the add-on is `apps/firefox-extension/dist/firefox/`.
+> The JavaScript is bundled (not minified) with esbuild. To rebuild from the attached source zip: Node 22, then `npm ci && npm run build` (the root build compiles the workspace packages the extension imports, then bundles it); the add-on is `apps/firefox-extension/dist/firefox/`.
 >
-> To try it: `npm ci && npm run build && node apps/mcp-server/dist/cli.js serve`, paste the extension token it prints into the popup, then call tools from any MCP client.
+> To try it: `npm ci && npm run build && node apps/mcp-server/dist/cli.js serve` and leave it running. In a second terminal, `node apps/mcp-server/dist/cli.js tokens` prints the extension token: paste it into the popup (server `ws://127.0.0.1:7345/ext`) and press Connect. Then call tools from any MCP client with the MCP token file it also shows.

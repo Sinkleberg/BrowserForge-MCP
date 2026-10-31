@@ -148,10 +148,8 @@ export class FlowRecorder {
     return out;
   }
 
-  /** Add a flow that came with a shared skill, under its own id, unless this computer already has one by that id. Never keeps values. */
+  /** Add a flow that came with a shared skill, under its own id (the caller checks it is not taken). Never keeps values. */
   adopt(flow: Flow): Flow {
-    const existing = this.get(flow.id);
-    if (existing) return existing;
     const out = { ...valueFree(flow), saved: true };
     const file = this.fileOf(out.id);
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
