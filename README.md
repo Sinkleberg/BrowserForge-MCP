@@ -34,7 +34,7 @@ A local-first Firefox + Chrome extension and MCP server for Claude Code, OpenAI 
 Requires Node.js 22 or newer, and Chrome, Edge, Brave or Firefox, on Linux, macOS or Windows (Linux is the one it has been tested on; see [docs/INSTALL.md](docs/INSTALL.md)).
 
 ```bash
-# From the package (no build): npm install -g ./browserforge-mcp-<version>.tgz   then:   browserforge setup
+# From npm (no build): npm install -g browserforge-mcp   then:   browserforge setup
 # From a checkout:
 npm install && npm run build
 node apps/mcp-server/dist/cli.js serve     # prints endpoints, creates tokens in ~/.config/browserforge/

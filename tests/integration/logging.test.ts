@@ -21,6 +21,7 @@ describe('persistent log', () => {
     const failed = logs().find((l) => l.msg === 'tool error' && l.tool === 'browser_get_tabs')!;
     expect(failed).toMatchObject({ code: 'NOT_CONNECTED' });
     expect(typeof failed.ms).toBe('number');
+    expect(failed).not.toHaveProperty('error'); // error messages can quote page content
   });
 
   it('records what the browser did and what the server asked of it, without any typed values', async () => {

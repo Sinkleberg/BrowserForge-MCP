@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { FlowBuilder, parseFlow, type Flow, type RawAction } from '@browserforge/flows';
 import type { HumanData } from './human.js';
+import { valueFree } from './skill.js';
 
 const IDLE_MS = 30 * 60_000;
 const MAX_STEPS = 300;
@@ -144,6 +145,15 @@ export class FlowRecorder {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     fs.writeFileSync(file, JSON.stringify(out, null, 1), { mode: 0o600 });
     this.worthKeeping(out.site, id);
+    return out;
+  }
+
+  /** Add a flow that came with a shared skill, under its own id (the caller checks it is not taken). Never keeps values. */
+  adopt(flow: Flow): Flow {
+    const out = { ...valueFree(flow), saved: true };
+    const file = this.fileOf(out.id);
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(file, JSON.stringify(out, null, 1), { mode: 0o600 });
     return out;
   }
 

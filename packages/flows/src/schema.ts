@@ -88,6 +88,8 @@ export function parseFlow(raw: unknown): Flow {
   const f = raw as Partial<Flow> | null;
   if (!f || typeof f !== 'object' || f.version !== FLOW_VERSION) throw new Error('Not a BrowserForge flow (version 1)');
   if (typeof f.id !== 'string' || typeof f.site !== 'string' || !Array.isArray(f.steps) || !Array.isArray(f.params)) throw new Error('Flow is missing id, site, params or steps');
+  // Flows are listed newest first by createdAt and shown by name, so both must be usable before a flow is accepted.
+  if (typeof f.name !== 'string' || typeof f.createdAt !== 'string' || Number.isNaN(Date.parse(f.createdAt))) throw new Error('Flow is missing a name or a valid createdAt');
   const actions = new Set(['navigate', 'click', 'fill', 'select', 'press', 'upload']);
   for (const s of f.steps) if (!s || !actions.has(s.action)) throw new Error(`Unknown step action '${String((s as { action?: unknown })?.action)}'`);
   return f as Flow;

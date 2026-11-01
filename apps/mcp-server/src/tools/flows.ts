@@ -86,7 +86,13 @@ export function registerFlowTools(server: McpServer, ctx: ServerContext): void {
       const flow = need(id);
       const exporter = getExporter(format, ctx.extraExporters);
       if (!exporter) throw new BrowserForgeError('INVALID_ARGUMENTS', `Unknown format '${format}'. Available: ${formats().map((e) => e.format).join(', ')}`);
-      const code = exporter.generate(flow, { includeDefaults: includeDefaults === true });
+      let code: string;
+      try {
+        code = exporter.generate(flow, { includeDefaults: includeDefaults === true });
+      } catch (err) {
+        // Exporters refuse flows they cannot represent faithfully (e.g. uploads in Chrome Recorder); the message says what to use instead.
+        throw new BrowserForgeError('INVALID_ARGUMENTS', err instanceof Error ? err.message : String(err));
+      }
       const file = out
         ? resolveSafePath(out, ctx.config.writeRoots)
         : resolveSafePath(path.join(ctx.config.configDir, 'exports', `${safeSegment(flow.site)}-${safeSegment(flow.name)}.${exporter.extension}`), ctx.config.writeRoots);

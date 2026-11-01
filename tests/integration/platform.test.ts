@@ -134,7 +134,7 @@ describe('flows to workflows', () => {
 
     const made = (await stack.call('flow_to_skill', { id: merged.id, name: 'shop-signup', description: 'Sign up on the shop' })).data;
     expect(made.inputs).toEqual(expect.arrayContaining(['email', 'password']));
-    const skillText = fs.readFileSync(path.join(made.dir, 'SKILL.md'), 'utf8') + fs.readFileSync(path.join(made.dir, 'workflows', 'run.json'), 'utf8');
+    const skillText = ['SKILL.md', 'workflows/run.json', 'flow.json'].map((f) => fs.readFileSync(path.join(made.dir, f), 'utf8')).join('\n');
     for (const secret of ['ada@example.com', 'hunter2-secret']) expect(skillText).not.toContain(secret);
     expect((await stack.call('flow_to_skill', { id: merged.id, name: 'shop-signup', description: 'Again' })).isError).toBe(true);
     expect((await stack.call('skill_list')).data.skills.map((s: any) => s.name)).toContain('shop-signup');
@@ -149,6 +149,25 @@ describe('flows to workflows', () => {
     expect(done.status).toBe('completed');
     const typed = requests.filter((r) => r.action === 'fill_field').map((r) => r.args.value);
     expect(typed).toEqual(['new@example.com', 'pw-from-user']);
+
+    // On a computer that never recorded the flow, the skill brings its own value-free copy.
+    stack.app.ctx.flows.delete(merged.id);
+    requests.length = 0;
+    const again = (await stack.call('skill_run_workflow', { skill: 'shop-signup', workflow: 'run', inputs: { email: 'other@example.com', password: 'pw-2' } })).data;
+    const done2 = await waitFor(async () => { const s = (await stack.call('workflow_get_status', { workflowId: again.workflowId })).data; return ['completed', 'failed'].includes(s.status) ? s : null; }, { what: 'replay', timeoutMs: 15_000 });
+    expect(done2.status).toBe('completed');
+    expect(requests.filter((r) => r.action === 'fill_field').map((r) => r.args.value)).toEqual(['other@example.com', 'pw-2']);
+    expect(stack.app.ctx.flows.get(merged.id)!.params.every((p) => p.default === undefined)).toBe(true);
+
+    // A different local flow under the same id (ids are site + second, so another computer can have one) is not replayed in its place.
+    const adopted = stack.app.ctx.flows.get(merged.id)!;
+    stack.app.ctx.flows.delete(merged.id);
+    stack.app.ctx.flows.adopt({ ...adopted, steps: adopted.steps.slice(0, 1) });
+    requests.length = 0;
+    const clash = await stack.call('skill_run_workflow', { skill: 'shop-signup', workflow: 'run', inputs: { email: 'x@example.com', password: 'pw-3' } });
+    expect(clash.isError).toBe(true);
+    expect(clash.data.error.message).toMatch(/different flow with the id/);
+    expect(requests).toEqual([]);
   });
 
   it('refuses to merge a single recording or a missing id', async () => {

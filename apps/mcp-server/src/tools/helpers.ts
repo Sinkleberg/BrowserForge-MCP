@@ -117,7 +117,8 @@ export function registerTool<S extends z.ZodObject>(server: McpServer, ctx: Serv
         return result;
       } catch (err) {
         if (!(err instanceof BrowserForgeError)) ctx.logger.error('tool failed', { tool: def.name, error: err instanceof Error ? err : String(err) });
-        else ctx.logger.info('tool error', { tool: def.name, code: err.code, error: err.message, ms: Date.now() - started, ...argIds(args) });
+        // Code, timing and ids only: messages can quote page content (table captions, labels) and the log is meant to be shareable.
+        else ctx.logger.info('tool error', { tool: def.name, code: err.code, ms: Date.now() - started, ...argIds(args) });
         const code = err instanceof BrowserForgeError ? err.code : 'INTERNAL';
         if (isPageAction(def) && !NOT_PAGE_FAILURES.has(code) && trackerFor(ctx).failed(AttemptTracker.key(args)) >= SCREENSHOT_AFTER) return errorResult(err, SCREENSHOT_HINT);
         return errorResult(err);

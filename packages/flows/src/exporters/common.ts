@@ -21,6 +21,19 @@ export function defaultsOf(flow: Flow, opts?: ExportOptions): Record<string, str
   return out;
 }
 
+/**
+ * Text that is safe inside a one-line `//` or `#` comment: line breaks and other control or separator characters become spaces, so
+ * recorded names and labels cannot end the comment and become code. Two languages read comments before parsing code: Java decodes
+ * `\uXXXX` everywhere, so the backslash of `\u` is split off; Python takes `coding:` / `coding=` in the first two lines as the file's
+ * encoding (PEP 263; `unicode_escape` would turn `\x0a` into a line break), so the word is split from its `:` or `=`.
+ */
+export const oneLine = (s: string): string =>
+  s
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')
+    .replace(/\\(?=u)/gi, '\\ ')
+    .replace(/(coding)(?=[:=])/gi, '$1 ');
+
 export function header(flow: Flow, comment: string): string {
   const consequential = flow.steps.filter((s) => s.consequential).length;
   return [
@@ -29,7 +42,7 @@ export function header(flow: Flow, comment: string): string {
     consequential
       ? `${consequential} step(s) are consequential (submit, send, upload, password). Outside BrowserForge there is no approval prompt, so the script stops before them unless FLOW_CONFIRM=1.`
       : 'No consequential steps.',
-  ].map((l) => `${comment} ${l}`).join('\n');
+  ].map((l) => `${comment} ${oneLine(l)}`).join('\n');
 }
 
-export const stepLabel = (s: FlowStep, i: number): string => `step ${i + 1}: ${s.label ?? s.action}`;
+export const stepLabel = (s: FlowStep, i: number): string => oneLine(`step ${i + 1}: ${s.label ?? s.action}`);
