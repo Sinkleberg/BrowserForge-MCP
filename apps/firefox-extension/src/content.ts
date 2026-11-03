@@ -57,7 +57,7 @@ function resolveTarget(args: Json): Element {
   if (sel) {
     let el: Element | null;
     try {
-      el = document.querySelector(sel);
+      el = document.querySelector(sel) ?? deepAll(sel)[0] ?? null;
     } catch {
       throw new CallError('INVALID_ARGUMENTS', 'Invalid CSS selector');
     }
@@ -94,7 +94,11 @@ function labelFor(el: Element): string {
   if (he.labels && he.labels.length) return textOf(he.labels[0]!, 120);
   const wrap = el.closest('label');
   if (wrap) return textOf(wrap, 120);
-  return (el.getAttribute('placeholder') ?? el.getAttribute('title') ?? '').trim().slice(0, 120);
+  const own = (el.getAttribute('placeholder') ?? el.getAttribute('title') ?? '').trim();
+  if (own) return own.slice(0, 120);
+  // Inside a shadow root the label often lives on the wrapper (<spl-form-field label="Nome">), not in a <label>.
+  const host = (el.getRootNode() as ShadowRoot).host;
+  return (host?.getAttribute('label') ?? host?.getAttribute('aria-label') ?? '').trim().slice(0, 120);
 }
 
 /** labelFor() of a <select> includes the text of every option; keep just the label. */
@@ -125,6 +129,22 @@ function describe(el: Element) {
   if (['input', 'textarea'].includes(tag) && he.type !== 'password' && he.type !== 'file') out.value = String(he.value ?? '').slice(0, 200);
   if (tag === 'input' && ['checkbox', 'radio'].includes(he.type)) out.checked = he.checked;
   return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined));
+}
+
+/**
+ * querySelectorAll that also looks inside open shadow roots, in document order. Web-component pages (SmartRecruiters' `spl-*` forms,
+ * some Workday widgets) keep their inputs in shadow roots, which plain querySelectorAll never reaches. Closed roots stay unreachable.
+ */
+function deepAll(selector: string, root: ParentNode = document): Element[] {
+  const out: Element[] = [];
+  const visit = (node: ParentNode): void => {
+    for (const el of node.querySelectorAll('*')) {
+      if (el.matches(selector)) out.push(el);
+      if (el.shadowRoot) visit(el.shadowRoot);
+    }
+  };
+  visit(root);
+  return out;
 }
 
 const INTERACTIVE = 'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=checkbox],[role=menuitem],[role=tab],[role=textbox],[role=option],[role=combobox],[role=listbox],[role=radio],[role=switch],[role=searchbox],[role=menuitemcheckbox],[role=menuitemradio],[role=treeitem],[onclick],[contenteditable=""],[contenteditable=true],[contenteditable=plaintext-only]';
@@ -250,7 +270,7 @@ function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: strin
   else el.value = value;
 }
 function fire(el: Element, ...types: string[]): void {
-  for (const t of types) el.dispatchEvent(new Event(t, { bubbles: true, cancelable: true }));
+  for (const t of types) el.dispatchEvent(new Event(t, { bubbles: true, cancelable: true, composed: true }));
 }
 
 function assertFillable(el: Element): asserts el is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
@@ -433,7 +453,7 @@ function fillElement(el: Element, value: string): void {
 
 // ---------- form discovery ----------
 function describeForm(form: HTMLFormElement | null, scope: Element, idx: number): Json {
-  const fields = [...scope.querySelectorAll('input,select,textarea')]
+  const fields = deepAll('input,select,textarea', scope)
     .filter((e) => !(e instanceof HTMLInputElement && ['hidden', 'submit', 'button', 'reset', 'image'].includes(e.type)))
     .map((e) => {
       const d = describe(e);
@@ -446,7 +466,7 @@ function describeForm(form: HTMLFormElement | null, scope: Element, idx: number)
       if ((e as HTMLInputElement).maxLength > 0) d.maxLength = (e as HTMLInputElement).maxLength;
       return d;
     });
-  const buttons = [...scope.querySelectorAll('button,input[type=submit]')].map(describe);
+  const buttons = deepAll('button,input[type=submit]', scope).map(describe);
   return {
     ref: refFor(form ?? scope),
     index: idx,
@@ -480,7 +500,7 @@ function findFileInput(scope: Element, key: string): HTMLInputElement | null {
   } catch {
     /* not a selector */
   }
-  const all = [...document.querySelectorAll('input[type=file]')].filter(isFile);
+  const all = deepAll('input[type=file]').filter(isFile);
   const words = key.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 2);
   const context = (e: HTMLInputElement) =>
     `${labelFor(e)} ${e.name} ${e.id} ${e.accept} ${e.getAttribute('aria-label') ?? ''} ${textOf(e.closest('label,[role=dialog],[class*=drop],[class*=upload],section,form,div') ?? e, 200)}`.toLowerCase();
@@ -491,7 +511,7 @@ function findFileInput(scope: Element, key: string): HTMLInputElement | null {
 
 function findField(scope: Element, key: string): Element | null {
   const k = key.trim().toLowerCase();
-  const all = [...scope.querySelectorAll('input,select,textarea')].filter((e) => !(e instanceof HTMLInputElement && ['hidden', 'submit', 'button'].includes(e.type)));
+  const all = deepAll('input,select,textarea', scope).filter((e) => !(e instanceof HTMLInputElement && ['hidden', 'submit', 'button'].includes(e.type)));
   const score = (e: Element): number => {
     const he = e as HTMLInputElement;
     const label = labelFor(e).toLowerCase();
@@ -539,7 +559,8 @@ function snapshot(root: Element, maxNodes: number): Json {
     const own = [...el.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent ?? '').join(' ').replace(/\s+/g, ' ').trim();
     if (own) node.text = own.slice(0, 200);
     if (depth < 40) {
-      const kids = [...el.children].map((c) => walk(c, depth + 1)).filter(Boolean);
+      if (el.shadowRoot) node.shadow = true;
+      const kids = [...(el.shadowRoot?.children ?? []), ...el.children].map((c) => walk(c, depth + 1)).filter(Boolean);
       if (kids.length) node.children = kids;
     }
     return node;
@@ -695,7 +716,7 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
     const table = args.format === 'table';
     const limit = Math.min(Number(args.limit ?? (table ? 100 : 300)), 1000);
     const inView = (e: Element) => { const r = (e as HTMLElement).getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth; };
-    let els = [...document.querySelectorAll(INTERACTIVE)].filter((e) => !(e instanceof HTMLInputElement && e.type === 'hidden'));
+    let els = deepAll(INTERACTIVE).filter((e) => !(e instanceof HTMLInputElement && e.type === 'hidden'));
     // Hidden file inputs stay listed: they are how uploads work behind styled drop zones.
     if (args.visibleOnly !== false) els = els.filter((e) => isVisible(e) || (e instanceof HTMLInputElement && e.type === 'file'));
     if (args.inViewport === true) els = els.filter(inView);
@@ -713,7 +734,7 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
     const forms = [...document.forms];
     const out = forms.map((f, i) => describeForm(f, f, i));
     // Fields outside any <form> (SPA style) are grouped as one pseudo-form.
-    const loose = [...document.querySelectorAll('input,select,textarea')].filter((e) => !(e as HTMLInputElement).form && !(e instanceof HTMLInputElement && e.type === 'hidden'));
+    const loose = deepAll('input,select,textarea').filter((e) => !(e as HTMLInputElement).form && !(e instanceof HTMLInputElement && e.type === 'hidden'));
     if (loose.length) out.push(describeForm(null, document.body, out.length));
     return { url: location.href, epoch: EPOCH, forms: out };
   },
@@ -1012,7 +1033,7 @@ async function pressEnterDefault(el: Element): Promise<void> {
   else if (el instanceof HTMLButtonElement || (el instanceof HTMLInputElement && ['submit', 'button'].includes(el.type))) el.click();
 }
 function focusNext(el: Element, back: boolean): void {
-  const items = [...document.querySelectorAll<HTMLElement>(INTERACTIVE)].filter(isVisible);
+  const items = (deepAll(INTERACTIVE) as HTMLElement[]).filter(isVisible);
   const i = items.indexOf(el as HTMLElement);
   const next = items[(i + (back ? -1 : 1) + items.length) % items.length];
   next?.focus();
@@ -1037,7 +1058,7 @@ const baseline = new WeakMap<Element, string>();
 function takeSnapshot(): void {
   try {
     const inView = (e: Element) => { const r = (e as HTMLElement).getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth; };
-    const all = [...document.querySelectorAll(INTERACTIVE)].filter((e) => !(e instanceof HTMLInputElement && e.type === 'hidden') && (isVisible(e) || (e instanceof HTMLInputElement && e.type === 'file')));
+    const all = deepAll(INTERACTIVE).filter((e) => !(e instanceof HTMLInputElement && e.type === 'hidden') && (isVisible(e) || (e instanceof HTMLInputElement && e.type === 'file')));
     const els = [...all.filter(inView), ...all.filter((e) => !inView(e))].slice(0, 100);
     snap = { at: Date.now(), els, rows: els.map((e, i) => tableRow(e, i, false).slice(0, 190)) };
   } catch {
