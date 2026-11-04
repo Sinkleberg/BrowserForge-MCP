@@ -93,7 +93,7 @@ flowchart LR
 
 ## Long-term vision
 
-Each direction says what exists **today** and what comes **next**. "Next" is direction, not a schedule or a promise.
+The planned work is on the public [roadmap board](https://github.com/users/zoghlamimostafa/projects/1); the [wiki](https://github.com/zoghlamimostafa/BrowserForge-MCP/wiki) has the friendly guides. Each direction says what exists **today** and what comes **next**. "Next" is direction, not a schedule or a promise.
 
 ### 1. From flows to a library of skills
 

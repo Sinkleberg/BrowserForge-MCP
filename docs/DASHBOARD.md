@@ -33,4 +33,4 @@ Tests: [tests/integration/dashboard.test.ts](../tests/integration/dashboard.test
 
 ## Next
 
-Version 2 should let you switch a plugin on or off from the page, with the approval in the browser extension as for every other consequential action. That is on the [roadmap](https://github.com/zoghlamimostafa/BrowserForge-MCP/projects).
+Version 2 should let you switch a plugin on or off from the page, with the approval in the browser extension as for every other consequential action. That is on the [roadmap](https://github.com/users/zoghlamimostafa/projects/1) (issue #7).

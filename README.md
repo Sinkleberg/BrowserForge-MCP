@@ -67,7 +67,7 @@ node apps/mcp-server/dist/cli.js tokens    # shows the extension token
 
    > Call `system_status`, then open `http://127.0.0.1:8099/apply` and describe the form.
 
-Full instructions: [docs/INSTALL.md](docs/INSTALL.md). Problems: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+Full instructions: [docs/INSTALL.md](docs/INSTALL.md) · guides in the [wiki](https://github.com/zoghlamimostafa/BrowserForge-MCP/wiki) · what is planned: the [roadmap board](https://github.com/users/zoghlamimostafa/projects/1). Problems: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 ## Things you can ask your agent
 
