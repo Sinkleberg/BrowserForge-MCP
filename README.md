@@ -21,6 +21,8 @@ Chrome, Edge and Brave use the Chrome Web Store build. Then install the small lo
 <sub>The approval step (12 s). <a href="docs/assets/demo.mp4"><b>Watch the full 73-second demo (MP4)</b></a>: fill a form, approve the submit, turn traffic into an OpenAPI spec, open the dashboard. Recorded on the demo site in this repo; a script plays the agent. Re-record it with <code>npm run demo:record</code>.</sub>
 
 [![npm](https://img.shields.io/npm/v/@el-makina-ai/browserforge-mcp?logo=npm&label=npm&color=CB3837)](https://www.npmjs.com/package/@el-makina-ai/browserforge-mcp)
+[![CI](https://github.com/zoghlamimostafa/BrowserForge-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/zoghlamimostafa/BrowserForge-MCP/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/zoghlamimostafa/BrowserForge-MCP?label=release)](https://github.com/zoghlamimostafa/BrowserForge-MCP/releases/latest)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Node >= 20](https://img.shields.io/badge/node-%E2%89%A5%2020-339933)
 ![MCP](https://img.shields.io/badge/protocol-MCP-black)
@@ -234,6 +236,10 @@ Read [docs/LIMITATIONS.md](docs/LIMITATIONS.md) for the full list and [docs/RELE
 ## Responsible use
 
 Use BrowserForge only on sites and accounts you are authorised to automate or inspect, and respect their terms of service and the law. It is built for your own sessions and for legitimate testing, integration and documentation work.
+
+## Support the project
+
+If BrowserForge saves you time, a ⭐ on this repository helps other people find it. Ideas, questions and plugins are welcome in [Discussions](https://github.com/zoghlamimostafa/BrowserForge-MCP/discussions); things you can pick up right now are the [issues marked *help wanted*](https://github.com/zoghlamimostafa/BrowserForge-MCP/issues?q=is%3Aopen+label%3A%22help+wanted%22), and the plan is on the [roadmap board](https://github.com/users/zoghlamimostafa/projects/1).
 
 ## License
 
