@@ -51,7 +51,7 @@ if (fs.existsSync(art)) {
 }
 
 // 3. Things people add after installing: skills, plugins, examples, docs. (No node_modules, no personal files.)
-const copyDir = (from, to) => fs.existsSync(from) && fs.cpSync(from, to, { recursive: true, filter: (s) => !/node_modules|\.venv|__pycache__/.test(s) });
+const copyDir = (from, to) => fs.existsSync(from) && fs.cpSync(from, to, { recursive: true, filter: (s) => !/node_modules|\.venv|__pycache__|assets[\\/]demo/.test(s) });
 copyDir(path.join(root, 'skills'), path.join(out, 'share', 'skills'));
 copyDir(path.join(root, 'plugins'), path.join(out, 'share', 'plugins'));
 copyDir(path.join(root, 'examples'), path.join(out, 'share', 'examples'));

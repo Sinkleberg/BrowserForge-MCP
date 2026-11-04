@@ -16,6 +16,10 @@ A local-first Firefox + Chrome extension and MCP server for Claude Code, OpenAI 
 
 Chrome, Edge and Brave use the Chrome Web Store build. Then install the small local program: on **Windows** run the installer above (it brings its own Node.js; Windows may warn because it is not code-signed yet: *More info*, then *Run anyway*), elsewhere see [Quick start](#quick-start).
 
+<a href="docs/assets/demo.mp4"><img src="docs/assets/demo.gif" alt="BrowserForge demo: an AI agent fills a job application in a real browser, the extension popup asks the human to approve the submit, then the agent captures the site's API and the dashboard shows what is installed" width="760"></a>
+
+<sub>The approval step (12 s). <a href="docs/assets/demo.mp4"><b>Watch the full 73-second demo (MP4)</b></a>: fill a form, approve the submit, turn traffic into an OpenAPI spec, open the dashboard. Recorded on the demo site in this repo; a script plays the agent. Re-record it with <code>npm run demo:record</code>.</sub>
+
 [![npm](https://img.shields.io/npm/v/@el-makina-ai/browserforge-mcp?logo=npm&label=npm&color=CB3837)](https://www.npmjs.com/package/@el-makina-ai/browserforge-mcp)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Node >= 20](https://img.shields.io/badge/node-%E2%89%A5%2020-339933)

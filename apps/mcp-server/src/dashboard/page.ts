@@ -32,6 +32,7 @@ export const DASHBOARD_CSS = String.raw`
 :root { color-scheme: light dark; --bg:#f6f7f9; --card:#fff; --fg:#1b1f24; --muted:#667085; --line:#e3e6eb; --accent:#2f6fed; --ok:#12805c; --warn:#b54708; --bad:#b42318; }
 @media (prefers-color-scheme: dark) { :root { --bg:#12151a; --card:#1b2028; --fg:#e8ebf0; --muted:#98a2b3; --line:#2a313c; --accent:#7aa2ff; --ok:#4ade80; --warn:#fbbf24; --bad:#f87171; } }
 * { box-sizing: border-box; }
+html { background:var(--bg); min-height:100%; }
 body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
 header { display:flex; align-items:center; justify-content:space-between; padding:14px 24px; border-bottom:1px solid var(--line); background:var(--card); }
 h1 { font-size:18px; margin:0; } h1 span { color:var(--muted); font-weight:400; }
