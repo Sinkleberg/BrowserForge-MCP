@@ -1,7 +1,26 @@
 # Installation
 
+<p>
+  <a href="https://chromewebstore.google.com/detail/browserforge/ihbkpcclcolaeppmfgmndmemjljmiaec"><img alt="Add BrowserForge to Chrome (Chrome Web Store)" src="https://img.shields.io/chrome-web-store/v/ihbkpcclcolaeppmfgmndmemjljmiaec?logo=googlechrome&logoColor=white&label=Add%20to%20Chrome&style=for-the-badge&color=4285F4" height="56"></a>&nbsp;&nbsp;
+  <a href="https://addons.mozilla.org/en-US/firefox/addon/browserforge/"><img alt="Add BrowserForge to Firefox (Firefox Add-ons)" src="https://img.shields.io/amo/v/browserforge?logo=firefoxbrowser&logoColor=white&label=Add%20to%20Firefox&style=for-the-badge&color=FF7139" height="56"></a>
+</p>
+
+* **[Windows installer](#windows-installer)**: one `.exe`, no Node.js or npm to install first.
 * **[From the package](#install-from-the-package-any-system)**: for trying BrowserForge on Linux, macOS or Windows. No build step.
 * **[From source on Ubuntu](#1-build)**: for developing it (the rest of this page).
+
+## Windows installer
+
+1. Download `BrowserForge-Setup-<version>.exe` from the [latest release](https://github.com/zoghlamimostafa/BrowserForge-MCP/releases/latest) (Windows 10 or newer, 64-bit).
+2. Run it. **Windows may say "Windows protected your PC"**: the installer is not code-signed yet, so choose *More info*, then *Run anyway*. It installs for your user only and asks for no administrator rights.
+3. Leave *Add the browserforge command to my PATH* ticked. On the last page keep *Show the setup steps* ticked: it prints your extension token and the command that connects Claude Code or Codex. Tick *Start the BrowserForge server now*, and the store pages if you have not added the extension yet.
+4. Install the extension: [Chrome Web Store](https://chromewebstore.google.com/detail/browserforge/ihbkpcclcolaeppmfgmndmemjljmiaec) (Chrome, Edge, Brave) or [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/browserforge/). Open its popup, paste the token, press *Connect*.
+
+What it puts on your computer: `%LOCALAPPDATA%\Programs\BrowserForge` holds the official Node.js 22 (checked against a pinned SHA-256 when the installer is built), the program and the `browserforge` command. Start-menu entries start the server, open the [dashboard](DASHBOARD.md), show the setup steps and link to the store pages. Your settings, tokens, flows and logs stay in `%APPDATA%\browserforge`; uninstalling removes the program and its PATH entry and **keeps that folder**.
+
+Update: run the newer installer over the old one. Uninstall: *Settings > Apps*, or the Start-menu entry.
+
+Every release builds the installer on a real Windows machine, installs it silently, starts the server, checks `/health`, `/status` and the dashboard, uninstalls it and checks that your data stayed ([windows-installer.yml](../.github/workflows/windows-installer.yml)). Nobody has run it on every Windows version, so please report problems.
 
 ## Install from the package (any system)
 
@@ -16,7 +35,7 @@ browserforge setup
 `browserforge setup` prints the next steps with **your** folders and token filled in: where to load the extension in your browser, what to type in its popup, and the command that connects Claude Code. In short:
 
 1. **Start the server and keep it running:** `browserforge serve`.
-2. **Load the extension.** Chrome, Edge or Brave: open `chrome://extensions` (or `edge://extensions`), switch on *Developer mode*, *Load unpacked*, and choose the folder `browserforge extension chrome` prints (`chrome-bodies` if you want response bodies captured; see below). Firefox: `about:debugging#/runtime/this-firefox`, *Load Temporary Add-on*, and choose `manifest.json` inside the folder `browserforge extension firefox` prints. Firefox removes temporary add-ons when it restarts; a permanent install needs a signed build (see "Firefox" below).
+2. **Install the extension.** Easiest: from the [Chrome Web Store](https://chromewebstore.google.com/detail/browserforge/ihbkpcclcolaeppmfgmndmemjljmiaec) (Chrome, Edge, Brave) or [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/browserforge/). To load the build that came with the package instead, for Chrome, Edge or Brave: open `chrome://extensions` (or `edge://extensions`), switch on *Developer mode*, *Load unpacked*, and choose the folder `browserforge extension chrome` prints (`chrome-bodies` if you want response bodies captured; see below). Firefox: `about:debugging#/runtime/this-firefox`, *Load Temporary Add-on*, and choose `manifest.json` inside the folder `browserforge extension firefox` prints. Firefox removes temporary add-ons when it restarts; a permanent install needs a signed build (see "Firefox" below).
 3. **Connect the extension:** click its icon, enter `ws://127.0.0.1:7345/ext` and the token from `browserforge setup`, press *Connect*.
 4. **Connect your AI client**, for example `claude mcp add --transport http browserforge http://127.0.0.1:7345/mcp --header "Authorization: Bearer <token>"` (`browserforge print-config claude` prints it for your shell).
 5. **Check:** `browserforge doctor`.

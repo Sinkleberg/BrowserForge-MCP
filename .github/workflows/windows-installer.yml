@@ -1,0 +1,81 @@
+name: Windows installer
+
+# Builds BrowserForge-Setup-<version>.exe (Inno Setup), installs it on a real Windows runner, checks that it works and uninstalls cleanly.
+# Runs when a version tag (v*) is pushed, or by hand: Actions > Windows installer > Run workflow. On a tag the .exe is attached to the release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write # attach the installer to the release on tags; nothing else is written
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      # The Node.js the installer carries. To update: pick a new Node 22 version on https://nodejs.org/dist/, copy the SHA-256 of
+      # node-v<version>-win-x64.zip from https://nodejs.org/dist/v<version>/SHASUMS256.txt, change both lines, and run this workflow.
+      NODE_VERSION: 22.23.4
+      NODE_ZIP_SHA256: cbc74b5e0982c9dbb41525fd8fb5dcd32fbee237863f7829072f4639a1ce5f20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run release
+
+      - name: Download the official Node.js for Windows and check it
+        shell: pwsh
+        run: |
+          $url = "https://nodejs.org/dist/v$env:NODE_VERSION/node-v$env:NODE_VERSION-win-x64.zip"
+          Invoke-WebRequest $url -OutFile node.zip
+          $hash = (Get-FileHash node.zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $env:NODE_ZIP_SHA256) { throw "Node.js download does not match the pinned checksum: $hash" }
+          Expand-Archive node.zip -DestinationPath node-unzipped
+          Move-Item "node-unzipped/node-v$env:NODE_VERSION-win-x64" installer-node
+          if (-not (Test-Path installer-node/node.exe)) { throw "node.exe is missing from the Node.js download" }
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "could not install Inno Setup" }
+          }
+          New-Item -ItemType Directory -Force dist-installer | Out-Null
+          & $iscc "/DAppVersion=$version" "/DReleaseDir=$((Resolve-Path "release/browserforge-mcp-$version").Path)" "/DNodeDir=$((Resolve-Path installer-node).Path)" "/DOutDir=$((Resolve-Path dist-installer).Path)" installer/windows/browserforge.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+          Get-ChildItem dist-installer | Format-Table Name, Length
+
+      - name: Install it silently, check it works, uninstall it
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem "dist-installer/BrowserForge-Setup-$env:VERSION.exe").FullName
+          $dir = Join-Path $env:RUNNER_TEMP 'BrowserForge'
+          $p = Start-Process -FilePath $exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/DIR=$dir", '/TASKS=addtopath' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exited with $($p.ExitCode)" }
+          node scripts/smoke-windows-installer.mjs $dir
+          if ($LASTEXITCODE -ne 0) { throw "smoke test failed" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BrowserForge-Setup
+          path: dist-installer/BrowserForge-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Attach the installer to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$env:GITHUB_REF_NAME" 2>$null
+          if ($LASTEXITCODE -ne 0) { gh release create "$env:GITHUB_REF_NAME" --title "BrowserForge MCP $env:GITHUB_REF_NAME" --notes "Windows installer attached. See docs/INSTALL.md." }
+          gh release upload "$env:GITHUB_REF_NAME" (Get-ChildItem "dist-installer/BrowserForge-Setup-*.exe").FullName --clobber

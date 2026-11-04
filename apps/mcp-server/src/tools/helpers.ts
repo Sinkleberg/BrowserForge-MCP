@@ -90,7 +90,7 @@ export function resultSize(result: { content?: unknown }): { chars: number; appr
 }
 
 export function registerTool<S extends z.ZodObject>(server: McpServer, ctx: ServerContext, def: ToolDef<S>): void {
-  ctx.tools.set(def.name, { input: def.input.strict(), run: def.run as never });
+  ctx.tools.set(def.name, { input: def.input.strict(), run: def.run as never, meta: { title: def.title, description: def.description, readOnly: def.readOnly } });
   server.registerTool(
     def.name,
     {

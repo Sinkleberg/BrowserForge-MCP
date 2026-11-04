@@ -1,5 +1,7 @@
 # Architecture
 
+For the idea, how BrowserForge differs from other tools and where it is going, see [VISION.md](VISION.md).
+
 ```
  Codex / Claude Code                    Firefox or Chrome
         │  MCP (Streamable HTTP, Bearer)        ▲

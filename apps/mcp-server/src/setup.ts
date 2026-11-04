@@ -44,7 +44,10 @@ export function setupReport(i: SetupInput): string {
     '1. Start the server (keep it running):',
     `   browserforge serve --port ${i.port}`,
     '',
-    '2. Load the browser extension:',
+    '2. Install the browser extension. Easiest, from the store:',
+    '   Chrome, Edge, Brave: https://chromewebstore.google.com/detail/browserforge/ihbkpcclcolaeppmfgmndmemjljmiaec',
+    '   Firefox:             https://addons.mozilla.org/en-US/firefox/addon/browserforge/',
+    '   Or load the build that came with this program.',
     '   Chrome, Edge, Brave: open chrome://extensions (edge://extensions), switch on Developer mode, press "Load unpacked" and pick:',
     `     ${where('chrome')}`,
     '     (use the "chrome-bodies" folder instead if you want captured response bodies:',
@@ -63,6 +66,7 @@ export function setupReport(i: SetupInput): string {
     '   Other clients: browserforge print-config codex',
     '',
     'Check everything with:  browserforge doctor',
+    'See what is installed (tools, plugins, skills, flows):  browserforge dashboard',
   ];
   return lines.join('\n') + '\n';
 }

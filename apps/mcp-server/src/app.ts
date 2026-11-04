@@ -25,6 +25,8 @@ import { createMcpServer } from './mcp.js';
 import { ProfileStore } from './profiles.js';
 import { AskQueue } from './asks.js';
 import { systemStatus } from './tools/system.js';
+import { dashboardData } from './dashboard/data.js';
+import { DASHBOARD_CSS, DASHBOARD_HTML, DASHBOARD_JS } from './dashboard/page.js';
 import { validateWorkflowStep } from './tools/workflow.js';
 import { WorkflowEngine } from './workflow.js';
 
@@ -143,6 +145,25 @@ export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: 
     res.end(JSON.stringify(body));
   };
 
+  /** The page and its two files hold no data, so they need no token. Nothing can run from anywhere but these files, and nothing can frame the page. */
+  const dashboardAsset = (res: http.ServerResponse, type: string, body: string) => {
+    res.writeHead(200, {
+      'content-type': `${type}; charset=utf-8`,
+      'cache-control': 'no-store',
+      'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      'x-content-type-options': 'nosniff',
+      'referrer-policy': 'no-referrer',
+      'x-frame-options': 'DENY',
+    });
+    res.end(body);
+  };
+
+  /** The dashboard's own key. The MCP token does not open it, and this one opens nothing else. */
+  const dashboardAuthorized = (req: http.IncomingMessage): boolean => {
+    const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? '');
+    return !!m && safeEqual(m[1]!.trim(), config.dashboardToken);
+  };
+
   const authorized = (req: http.IncomingMessage): boolean => {
     const h = req.headers.authorization ?? '';
     const m = /^Bearer\s+(.+)$/i.exec(h);
@@ -213,6 +234,16 @@ export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: 
         if (!isLoopbackHost(req.headers.host)) return json(res, 403, { error: 'Forbidden host' });
         const url = new URL(req.url ?? '/', 'http://localhost');
         if (url.pathname === '/health' && req.method === 'GET') return json(res, 200, { ok: true, name: 'browserforge-mcp', version: SERVER_VERSION });
+        if (req.method === 'GET' && url.pathname === '/dashboard') return dashboardAsset(res, 'text/html', DASHBOARD_HTML);
+        if (req.method === 'GET' && url.pathname === '/dashboard/app.js') return dashboardAsset(res, 'text/javascript', DASHBOARD_JS);
+        if (req.method === 'GET' && url.pathname === '/dashboard/app.css') return dashboardAsset(res, 'text/css', DASHBOARD_CSS);
+        if (url.pathname === '/dashboard/data') {
+          // The dashboard page itself calls this, so (unlike /mcp) an Origin is allowed, but only the page's own: the one the Host header names.
+          if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' }, { allow: 'GET' });
+          if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) return json(res, 403, { error: 'Cross-origin requests are not allowed' });
+          if (!dashboardAuthorized(req)) return json(res, 401, { error: 'Unauthorized' }, { 'www-authenticate': 'Bearer realm="browserforge-dashboard"' });
+          return json(res, 200, await dashboardData(ctx));
+        }
         // Browser-originated requests (CSRF / DNS rebinding) are never legitimate for authenticated endpoints.
         if (!originAllowed(req) || req.method === 'OPTIONS') return json(res, 403, { error: 'Cross-origin requests are not allowed' });
         if (!authorized(req)) return json(res, 401, { error: 'Unauthorized' }, { 'www-authenticate': 'Bearer realm="browserforge"' });

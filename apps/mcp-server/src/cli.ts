@@ -13,6 +13,7 @@ import { PluginStore } from './plugins/store.js';
 import { discoverSkills } from './plugins/skills.js';
 import { SERVER_VERSION, buildConfig } from './context.js';
 import { readLogs } from '@browserforge/shared';
+import { dashboardUrl, openUrl } from './dashboard/open.js';
 import { EXTENSION_KINDS, findExtensionDir, setupReport, type ExtensionKind } from './setup.js';
 
 const USAGE = `browserforge ${SERVER_VERSION} — local MCP server for the BrowserForge browser extension
@@ -23,6 +24,7 @@ Usage:
   browserforge setup  [--port N]                                         Step-by-step setup for your system: server, extension, AI client
   browserforge extension <chrome|chrome-bodies|firefox>                  Print the folder of the built extension to load in the browser
   browserforge tokens                                                    Print token file locations (and the extension token)
+  browserforge dashboard [--print] [--port N]                            Open the read-only dashboard (tools, plugins, skills, flows, local models) in your browser
   browserforge plugin add <npm-name|git-url|./folder> [--yes] | list | remove|enable|disable|update <id> | config <id> [key=value...] | new <id> | validate <folder> | search <words>
   browserforge skill  add <folder> | list | new <name> | export <name> --to <dir>      Plugins and skills (see docs/PLUGINS.md)
   browserforge flow   list | export <id> --format <fmt> [--out FILE] [--defaults] | consolidate <site> --name N | to-skill <id> --name N   Recorded flows (see docs/FLOWS.md)
@@ -85,6 +87,7 @@ async function main(): Promise<void> {
       'capskip-url': { type: 'string' },
       'capskip-api-key': { type: 'string' },
       'capskip-timeout': { type: 'string' },
+      print: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -123,7 +126,7 @@ async function main(): Promise<void> {
       const app = createApp(common);
       const p = await app.listen();
       process.stderr.write(
-        `BrowserForge MCP listening on http://127.0.0.1:${p}\n  MCP endpoint : http://127.0.0.1:${p}/mcp  (Authorization: Bearer <mcp-token>)\n  Extension WS : ws://127.0.0.1:${p}/ext\n  Tokens       : ${app.ctx.config.configDir}/{extension-token,mcp-token}\n`,
+        `BrowserForge MCP listening on http://127.0.0.1:${p}\n  MCP endpoint : http://127.0.0.1:${p}/mcp  (Authorization: Bearer <mcp-token>)\n  Extension WS : ws://127.0.0.1:${p}/ext\n  Tokens       : ${app.ctx.config.configDir}/{extension-token,mcp-token}\n  Dashboard    : run  browserforge dashboard  (read-only; plugins, skills, tools, flows)\n`,
       );
       const stop = () => void app.close().finally(() => process.exit(0));
       process.on('SIGINT', stop);
@@ -166,6 +169,22 @@ async function main(): Promise<void> {
     case 'tokens': {
       const cfg = buildConfig({ port });
       process.stdout.write(`Config dir      : ${cfg.configDir}\nExtension token : ${cfg.extensionToken}\n  (paste into the BrowserForge extension popup)\nMCP token file  : ${path.join(cfg.configDir, 'mcp-token')}\n  (used as Bearer token by Codex / Claude Code; never paste it into a web page)\n`);
+      return;
+    }
+    case 'dashboard': {
+      const cfg = buildConfig({ port });
+      const url = dashboardUrl(cfg.port, cfg.dashboardToken);
+      if (values.print) {
+        process.stdout.write(url + '\n');
+        return;
+      }
+      const health = await fetch(`http://127.0.0.1:${cfg.port}/health`).then((r) => r.json()).catch(() => null);
+      if (!health) {
+        process.stdout.write(`✗ no daemon at http://127.0.0.1:${cfg.port}. Start it with: browserforge serve\n`);
+        process.exit(1);
+      }
+      openUrl(url);
+      process.stdout.write(`Opening the dashboard (read-only, this computer only).\nIf nothing opens, run: browserforge dashboard --print\n`);
       return;
     }
     case 'plugin':

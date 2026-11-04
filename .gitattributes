@@ -1,0 +1,6 @@
+# Windows batch and installer files must keep CRLF line endings, or cmd.exe can misread labels and quoting.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.iss text eol=crlf
+installer/windows/*.ico binary

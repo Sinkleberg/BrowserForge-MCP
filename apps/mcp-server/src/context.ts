@@ -22,6 +22,8 @@ export interface ServerConfig {
   port: number;
   extensionToken: string;
   mcpToken: string;
+  /** Only opens the read-only dashboard page's data. Never accepted by /mcp, and the MCP token is never accepted by the dashboard. */
+  dashboardToken: string;
   /** Allow tools to return unredacted secrets when the caller passes reveal:true. Off by default. */
   allowReveal: boolean;
   /** Directories the agent may read user files (CVs) from. */
@@ -72,6 +74,8 @@ export function assertLoopbackUrl(raw: string): string {
 export interface ToolEntry {
   input: import('zod').ZodObject;
   run: (args: never, extra: { signal: AbortSignal }) => Promise<unknown>;
+  /** What the dashboard lists. The description of a plugin tool starts with "[plugin <id>]". */
+  meta?: { title: string; description: string; readOnly: boolean };
 }
 
 export interface ServerContext {
@@ -117,6 +121,7 @@ export function buildConfig(overrides: Partial<ServerConfig> & { extraAllowDirs?
     port: overrides.port ?? Number(process.env.BROWSERFORGE_PORT ?? DEFAULT_PORT),
     extensionToken: overrides.extensionToken ?? loadOrCreateToken(path.join(dir, 'extension-token')),
     mcpToken: overrides.mcpToken ?? loadOrCreateToken(path.join(dir, 'mcp-token')),
+    dashboardToken: overrides.dashboardToken ?? loadOrCreateToken(path.join(dir, 'dashboard-token')),
     allowReveal: overrides.allowReveal ?? process.env.BROWSERFORGE_ALLOW_REVEAL === '1',
     uploadRoots: overrides.uploadRoots ?? [filesDir, path.join(home, 'Documents'), path.join(home, 'Downloads'), ...extra, ...envDirs],
     writeRoots: overrides.writeRoots ?? [exportsDir, ...extra, ...envDirs],

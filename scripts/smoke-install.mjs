@@ -68,6 +68,17 @@ if (port) {
   check('GET /status with the token', status === 200, String(status));
   const noAuth = await fetch(`http://127.0.0.1:${port}/status`).then((r) => r.status).catch(() => 0);
   check('GET /status without a token is refused', noAuth === 401, String(noAuth));
+
+  // The read-only dashboard: the page is public, its data needs its own token, and the MCP token does not open it.
+  const page = await fetch(`http://127.0.0.1:${port}/dashboard`).then(async (r) => ({ status: r.status, text: await r.text() })).catch(() => ({ status: 0, text: '' }));
+  check('GET /dashboard serves the page', page.status === 200 && /BrowserForge dashboard/.test(page.text), String(page.status));
+  const dashToken = fs.readFileSync(path.join(home, 'dashboard-token'), 'utf8').trim();
+  const mcpToken = fs.readFileSync(path.join(home, 'mcp-token'), 'utf8').trim();
+  const data = (token) => fetch(`http://127.0.0.1:${port}/dashboard/data`, { headers: token ? { authorization: `Bearer ${token}` } : {} }).then((r) => r.status).catch(() => 0);
+  check('GET /dashboard/data without a token is refused', (await data()) === 401);
+  check('GET /dashboard/data with the MCP token is refused', (await data(mcpToken)) === 401);
+  check('GET /dashboard/data with the dashboard token', (await data(dashToken)) === 200);
+  check('dashboard --print gives an address with the token in the fragment', new RegExp(`/dashboard#t=${encodeURIComponent(dashToken).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`).test(run('dashboard', '--print', '--port', String(port)).trim()));
 }
 server.kill();
 

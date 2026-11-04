@@ -8,15 +8,24 @@
 
 A local-first Firefox + Chrome extension and MCP server for Claude Code, OpenAI Codex and any other MCP client.
 
+### Install the extension
+
+<a href="https://chromewebstore.google.com/detail/browserforge/ihbkpcclcolaeppmfgmndmemjljmiaec"><img alt="Add BrowserForge to Chrome (Chrome Web Store)" src="https://img.shields.io/chrome-web-store/v/ihbkpcclcolaeppmfgmndmemjljmiaec?logo=googlechrome&logoColor=white&label=Add%20to%20Chrome&style=for-the-badge&color=4285F4" height="56"></a>&nbsp;&nbsp;
+<a href="https://addons.mozilla.org/en-US/firefox/addon/browserforge/"><img alt="Add BrowserForge to Firefox (Firefox Add-ons)" src="https://img.shields.io/amo/v/browserforge?logo=firefoxbrowser&logoColor=white&label=Add%20to%20Firefox&style=for-the-badge&color=FF7139" height="56"></a>
+
+Chrome, Edge and Brave use the Chrome Web Store build. Then install the small local program: [Quick start](#quick-start).
+
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Node >= 20](https://img.shields.io/badge/node-%E2%89%A5%2020-339933)
 ![MCP](https://img.shields.io/badge/protocol-MCP-black)
-![Firefox + Chrome](https://img.shields.io/badge/browsers-Firefox%20%7C%20Chrome-orange)
-![Status: pre-release](https://img.shields.io/badge/status-pre--release%200.1.0-yellow)
 
 </div>
 
 ---
+
+## The idea
+
+AI agents are good at deciding what to do on a website and bad at being trusted with your accounts. BrowserForge closes that gap: the agent works in **your real browser** through an extension, a small **local program** carries its requests, and **you approve** anything consequential (submit, send, pay, passwords, uploads) with a click the agent cannot answer. What the agent sees and learns stays on your computer and is turned into reusable things: replayable **flows**, shareable **skills**, and **API specs and clients** built from the traffic it observed. The longer story, how this differs from headless automation and other browser bridges, and where the project is going: **[docs/VISION.md](docs/VISION.md)**.
 
 ## Why BrowserForge
 
@@ -41,7 +50,11 @@ node apps/mcp-server/dist/cli.js serve     # prints endpoints, creates tokens in
 node apps/mcp-server/dist/cli.js tokens    # shows the extension token
 ```
 
-1. **Load the extension.**
+1. **Install the extension** from the store:
+   - [Chrome Web Store](https://chromewebstore.google.com/detail/browserforge/ihbkpcclcolaeppmfgmndmemjljmiaec) (Chrome, Edge, Brave)
+   - [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/browserforge/)
+
+   Working from a checkout? Load your own build instead:
    - Firefox: `about:debugging#/runtime/this-firefox` → *Load Temporary Add-on* → `apps/firefox-extension/dist/firefox/manifest.json`
    - Chrome: `chrome://extensions` → Developer mode → *Load unpacked* → `apps/firefox-extension/dist/chrome`
 2. **Connect it.** Click the toolbar icon, paste the **extension token**, press *Connect*.
@@ -112,6 +125,10 @@ Exported scripts stop before submits, sends and uploads unless you say `FLOW_CON
 * **Flows to skills:** `flow_consolidate` merges many recordings of a task into one clean flow, and `flow_to_skill` turns it into a shareable skill that replays with no model.
 * **Record me:** an opt-in popup switch that also records *your own* clicks and fields as a flow and as training examples for the local model. Off by default, passwords never recorded, everything stays on your computer.
 
+### A dashboard for what is installed
+
+`browserforge dashboard` opens a read-only page on your own computer: connected browsers, MCP sessions and every tool, the plugins and skills you installed (with the permissions you approved, in plain words), recorded flows and how the local models are doing. It changes nothing and has its own token. Details: [docs/DASHBOARD.md](docs/DASHBOARD.md).
+
 ## Extend BrowserForge: plugins and skills
 
 Anyone can add to BrowserForge without touching the core:
@@ -126,6 +143,27 @@ browserforge plugin config rendercv cvDir=~/cv rendercv=~/venv/bin/rendercv
 ```
 
 The first plugin is [`plugins/rendercv`](plugins/rendercv): tailor a RenderCV resume to each job (reorder and reword only; it rejects any number, link or tool name not already in your CV), render it, and keep an application log. Its companion skill [`skills/job-apply`](skills/job-apply) is a worked example of a skill. Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## The ecosystem
+
+```mermaid
+flowchart LR
+  A["Your agent<br/>Claude Code · Codex · any MCP client"] -->|"MCP + token"| D
+  subgraph D["browserforge daemon · 127.0.0.1"]
+    T["Tools"] --- N["Traffic analyzer<br/>+ client generator"]
+    T --- F["Flows"]
+    T --- M["Memory<br/>site cards · traces"]
+    T --- L["Local deciders<br/>Qwen · Laya"]
+  end
+  D -->|"WebSocket + token"| E["Extension<br/>Chrome · Firefox<br/>approvals · STOP"]
+  N --> O["OpenAPI · API clients · HAR"]
+  F --> S["Playwright · Selenium ·<br/>Chrome Recorder scripts"]
+  F -->|"flow_to_skill"| K["Skills"]
+  K --> A
+  P["Plugins<br/>permission manifests"] --> T
+```
+
+The extension, the daemon and the typed protocol between them are the core. Flows, skills and plugins are how it grows without touching the core, and the local models and site memory make repeated tasks cheaper. Each part, and where it is heading (a shared library of skills, local models that learn from your demonstrations, more plugins, more browsers and platforms), is in [docs/VISION.md](docs/VISION.md).
 
 ## How it works
 
@@ -183,7 +221,7 @@ docs/  examples/  CONTRIBUTING.md
 
 ## Status and limitations
 
-Pre-release (0.1.0). BrowserForge reports what a WebExtension can actually see; it does not capture all browser traffic. For example, Firefox cannot observe WebSocket frames, content scripts run in the top frame only, and consequential-action detection is heuristic.
+Version 0.1.0, published on the Chrome Web Store and Firefox Add-ons. BrowserForge reports what a WebExtension can actually see; it does not capture all browser traffic. For example, Firefox cannot observe WebSocket frames, closed shadow roots and sandboxed iframes are invisible to it, and consequential-action detection is heuristic.
 
 Read [docs/LIMITATIONS.md](docs/LIMITATIONS.md) for the full list and [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) for the manual checks still required before a release.
 
