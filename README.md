@@ -11,9 +11,10 @@ A local-first Firefox + Chrome extension and MCP server for Claude Code, OpenAI 
 ### Install the extension
 
 <a href="https://chromewebstore.google.com/detail/browserforge/ihbkpcclcolaeppmfgmndmemjljmiaec"><img alt="Add BrowserForge to Chrome (Chrome Web Store)" src="https://img.shields.io/chrome-web-store/v/ihbkpcclcolaeppmfgmndmemjljmiaec?logo=googlechrome&logoColor=white&label=Add%20to%20Chrome&style=for-the-badge&color=4285F4" height="56"></a>&nbsp;&nbsp;
-<a href="https://addons.mozilla.org/en-US/firefox/addon/browserforge/"><img alt="Add BrowserForge to Firefox (Firefox Add-ons)" src="https://img.shields.io/amo/v/browserforge?logo=firefoxbrowser&logoColor=white&label=Add%20to%20Firefox&style=for-the-badge&color=FF7139" height="56"></a>
+<a href="https://addons.mozilla.org/en-US/firefox/addon/browserforge/"><img alt="Add BrowserForge to Firefox (Firefox Add-ons)" src="https://img.shields.io/amo/v/browserforge?logo=firefoxbrowser&logoColor=white&label=Add%20to%20Firefox&style=for-the-badge&color=FF7139" height="56"></a>&nbsp;&nbsp;
+<a href="https://github.com/zoghlamimostafa/BrowserForge-MCP/releases/latest"><img alt="Download the Windows installer" src="https://img.shields.io/badge/Windows-installer%20(.exe)-0078D6?logo=windows&logoColor=white&style=for-the-badge" height="56"></a>
 
-Chrome, Edge and Brave use the Chrome Web Store build. Then install the small local program: [Quick start](#quick-start).
+Chrome, Edge and Brave use the Chrome Web Store build. Then install the small local program: on **Windows** run the installer above (it brings its own Node.js; Windows may warn because it is not code-signed yet: *More info*, then *Run anyway*), elsewhere see [Quick start](#quick-start).
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Node >= 20](https://img.shields.io/badge/node-%E2%89%A5%2020-339933)
