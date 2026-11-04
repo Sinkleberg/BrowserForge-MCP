@@ -221,7 +221,7 @@ docs/  examples/  CONTRIBUTING.md
 
 ## Status and limitations
 
-Version 0.1.0, published on the Chrome Web Store and Firefox Add-ons. BrowserForge reports what a WebExtension can actually see; it does not capture all browser traffic. For example, Firefox cannot observe WebSocket frames, closed shadow roots and sandboxed iframes are invisible to it, and consequential-action detection is heuristic.
+Version 0.2.0 (the Chrome Web Store and Firefox Add-ons are updated after each release), published on the Chrome Web Store and Firefox Add-ons. BrowserForge reports what a WebExtension can actually see; it does not capture all browser traffic. For example, Firefox cannot observe WebSocket frames, closed shadow roots and sandboxed iframes are invisible to it, and consequential-action detection is heuristic.
 
 Read [docs/LIMITATIONS.md](docs/LIMITATIONS.md) for the full list and [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) for the manual checks still required before a release.
 

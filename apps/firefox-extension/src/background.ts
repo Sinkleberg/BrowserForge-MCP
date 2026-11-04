@@ -11,7 +11,7 @@ declare const __E2E__: boolean; // true only in the -e2e test builds (dead-strip
 
 z.config({ jitless: true }); // extension CSP forbids eval-based schema compilation
 
-const EXT_VERSION = '0.1.0';
+const EXT_VERSION = '0.2.0';
 const APPROVAL_TIMEOUT_MS = 120_000;
 const RESTRICTED_HOST = /^(addons\.mozilla\.org|chromewebstore\.google\.com|chrome\.google\.com)$/i;
 

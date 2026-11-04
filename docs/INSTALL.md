@@ -28,7 +28,7 @@ You need [Node.js 22 or newer](https://nodejs.org) and Chrome, Edge, Brave or Fi
 
 ```bash
 npm install -g browserforge-mcp
-# or the tarball from https://github.com/zoghlamimostafa/BrowserForge-MCP/releases: npm install -g ./browserforge-mcp-0.1.0.tgz
+# or the tarball from https://github.com/zoghlamimostafa/BrowserForge-MCP/releases: npm install -g ./browserforge-mcp-0.2.0.tgz
 browserforge setup
 ```
 

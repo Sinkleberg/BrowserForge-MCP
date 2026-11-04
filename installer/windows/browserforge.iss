@@ -7,7 +7,7 @@
 ; Settings, tokens, flows and logs live in %APPDATA%\browserforge and are never touched by installing or uninstalling.
 ;
 ; Build (done by .github/workflows/windows-installer.yml):
-;   ISCC /DAppVersion=0.1.0 /DReleaseDir=<release\browserforge-mcp-0.1.0> /DNodeDir=<unzipped node-v22.x-win-x64> /DOutDir=<where to write the .exe> browserforge.iss
+;   ISCC /DAppVersion=0.2.0 /DReleaseDir=<release\browserforge-mcp-0.2.0> /DNodeDir=<unzipped node-v22.x-win-x64> /DOutDir=<where to write the .exe> browserforge.iss
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
