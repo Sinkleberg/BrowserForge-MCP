@@ -91,7 +91,7 @@ Type: files; Name: "{group}\*.url"
 
 [Registry]
 ; The user's own PATH (HKCU), never the machine's. Removed again on uninstall (see [Code]).
-Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPath(ExpandConstant('{app}')); Tasks: addtopath
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{code:AppendToPath|{app}}"; Check: NeedsAddPath(ExpandConstant('{app}')); Tasks: addtopath
 
 [Run]
 Filename: "{sys}\cmd.exe"; Parameters: "/k """"{app}\browserforge.cmd"" setup"""; WorkingDir: "{userdocs}"; Description: "Show the setup steps (extension token, how to connect Claude Code or Codex)"; Flags: postinstall nowait skipifsilent
@@ -100,6 +100,17 @@ Filename: "{#Firefox}"; Description: "Open the Firefox Add-ons page"; Flags: pos
 Filename: "{sys}\cmd.exe"; Parameters: "/k """"{app}\browserforge.cmd"" serve"""; WorkingDir: "{userdocs}"; Description: "Start the BrowserForge server now"; Flags: postinstall nowait skipifsilent unchecked
 
 [Code]
+// The user's own PATH with the install folder added, without doubling the separator. The value is read as it is stored (still holding
+// things like %USERPROFILE%), so the user's other entries are written back unchanged.
+function AppendToPath(Dir: string): string;
+var
+  Paths: string;
+begin
+  if not RegQueryStringValue(HKCU, 'Environment', 'Path', Paths) then Paths := '';
+  while (Length(Paths) > 0) and (Paths[Length(Paths)] = ';') do Delete(Paths, Length(Paths), 1);
+  if Paths = '' then Result := Dir else Result := Paths + ';' + Dir;
+end;
+
 function NeedsAddPath(Dir: string): Boolean;
 var
   Paths: string;

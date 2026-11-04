@@ -37,11 +37,20 @@ const pathValue = () => {
   }
 };
 
+// The PATH as stored (unexpanded), split into entries. BF_PATH_BEFORE is what it held before the installer ran.
+const rawPath = () => (/\bPath\s+REG_(?:EXPAND_)?SZ\s+(.*)/i.exec(pathValue())?.[1] ?? '').trim().split(';').filter(Boolean);
+const hasEntry = (entry) => rawPath().some((e) => e.toLowerCase() === entry.toLowerCase());
+const before = (process.env.BF_PATH_BEFORE ?? '').split(';').filter(Boolean);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const othersKept = () => before.every((e) => rawPath().includes(e));
+
 // What was installed.
 for (const rel of ['node\\node.exe', 'node\\node_modules\\npm\\bin\\npm-cli.js', 'app\\bin\\browserforge.mjs', 'app\\extension\\chrome\\manifest.json', 'app\\extension\\firefox\\manifest.json', 'app\\share\\skills', 'browserforge.ico', 'unins000.exe']) {
   check(`installed: ${rel}`, fs.existsSync(path.join(dir, rel)));
 }
-check('the installer added the install folder to the user PATH', pathValue().toLowerCase().includes(dir.toLowerCase()), pathValue().slice(0, 200));
+check('the installer added the install folder to the user PATH', hasEntry(dir), pathValue().slice(0, 300));
+check("the installer left the user's other PATH entries exactly as they were", othersKept(), `before: ${before.join(' ; ')}\nnow: ${rawPath().join(' ; ')}`);
+check('the installer did not leave an empty PATH entry (;;)', !/;;/.test(pathValue()), pathValue().slice(0, 300));
 
 // The command works through the shim, with the bundled Node.
 check('browserforge --help prints usage', /Usage:/.test(runShim('--help')));
@@ -95,10 +104,13 @@ try {
   check('uninstaller ran', false, String(e));
 }
 // The uninstaller hands over to a copy of itself and returns: wait until the folder is empty of our files.
-for (let i = 0; i < 60 && fs.existsSync(shim); i++) await new Promise((r) => setTimeout(r, 1000));
+for (let i = 0; i < 60 && fs.existsSync(shim); i++) await sleep(1000);
 check('uninstall removed the command', !fs.existsSync(shim));
 check('uninstall removed the bundled Node', !fs.existsSync(path.join(dir, 'node', 'node.exe')));
-check('uninstall removed the PATH entry', !pathValue().toLowerCase().includes(dir.toLowerCase()), pathValue().slice(0, 200));
+// The PATH entry is removed in the uninstaller's very last step, after the files: give it time, but not forever.
+for (let i = 0; i < 30 && hasEntry(dir); i++) await sleep(1000);
+check('uninstall removed the PATH entry', !hasEntry(dir), pathValue().slice(0, 300));
+check("uninstall left the user's other PATH entries exactly as they were", othersKept(), `before: ${before.join(' ; ')}\nnow: ${rawPath().join(' ; ')}`);
 check("uninstall kept the user's own data", fs.existsSync(dataDir));
 
 fs.rmSync(home, { recursive: true, force: true });

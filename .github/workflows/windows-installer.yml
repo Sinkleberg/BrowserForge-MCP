@@ -59,6 +59,8 @@ jobs:
         run: |
           $exe = (Get-ChildItem "dist-installer/BrowserForge-Setup-$env:VERSION.exe").FullName
           $dir = Join-Path $env:RUNNER_TEMP 'BrowserForge'
+          # The user's PATH as stored (unexpanded), so the check can prove the installer and uninstaller leave the other entries alone.
+          $env:BF_PATH_BEFORE = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment').GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
           $p = Start-Process -FilePath $exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/DIR=$dir", '/TASKS=addtopath' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "installer exited with $($p.ExitCode)" }
           node scripts/smoke-windows-installer.mjs $dir

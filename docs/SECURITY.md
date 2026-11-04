@@ -6,7 +6,7 @@
 |---|---|
 | A web page controls the browser through the agent (prompt injection) | All page-derived tool output is wrapped `{untrustedWebContent:true, notice, data}`; server instructions tell the agent to treat it as data; consequential actions need a human click that the agent cannot answer; there is **no** "evaluate arbitrary JS" tool. |
 | A web page attacks the local server (CSRF, DNS rebinding) | Binds to `127.0.0.1` only; `Host` must be loopback; **any request with an `Origin` header is refused** (CLI MCP clients never send one; web pages always do); no CORS headers, `OPTIONS` refused; bearer token required for `/mcp` and `/status`. |
-| Another local program drives the browser | Two independent 256-bit tokens, generated with `crypto.randomBytes`, stored `0600` in `~/.config/browserforge/` (`extension-token`, `mcp-token`), compared with constant-time hashing. Anyone who can read your home directory can already do more damage; there is no protection against a same-user attacker. |
+| Another local program drives the browser | Three independent 256-bit tokens, generated with `crypto.randomBytes`, stored `0600` in `~/.config/browserforge/` (`extension-token`, `mcp-token`, `dashboard-token`), compared with constant-time hashing. Anyone who can read your home directory can already do more damage; there is no protection against a same-user attacker. |
 | Another extension connects to the socket | It would need the extension token. Origin is only checked to be *an* extension origin (`moz-extension://` / `chrome-extension://`), **not** pinned to this extension's id — the token is the real gate. |
 | Malicious/oversized messages | Zod validation on every frame in both directions, 12 MB frame limit, binary frames rejected, 6 invalid frames closes the socket, ≤10 concurrent unauthenticated sockets, 5 s hello timeout. |
 | Secrets leaking to the agent, logs or files | See "Secrets" below. |
@@ -92,6 +92,18 @@ What it does and does not do:
 **Solving by looking (no CapSkip).** The agent instructions also let the agent solve a CAPTCHA itself when YOLO mode is on or you tell it to: it clicks the checkbox inside the CAPTCHA iframe, takes one screenshot of the image challenge, clicks the matching tiles and presses Verify, giving up after 3 rounds. This uses only the ordinary click and screenshot tools (the screenshot goes to your AI client, as any screenshot does), so there is no server-side gate beyond the instructions; the YOLO condition is guidance, not enforcement.
 
 Solving a CAPTCHA defeats a check the site put there to stop automation. Use it only on sites you are authorised to automate, on a dedicated browser profile, and treat it like YOLO itself.
+
+## Dashboard
+
+`browserforge dashboard` opens a read-only page served by the daemon (see [DASHBOARD.md](DASHBOARD.md)).
+
+* The page and its two files hold no data and need no token. `/dashboard/data` needs the **dashboard token**; the MCP token and the extension token are refused there, and the dashboard token is refused everywhere else (`/mcp`, `/status`, `/asks`).
+* The token travels in the URL fragment (`#t=...`), which browsers never send to a server. The page keeps it in `sessionStorage` for that tab and removes it from the address bar. It is never accepted from the query string or a cookie.
+* `/dashboard/data` is the one endpoint that accepts an `Origin` header, and only the page's own (`http://<Host>`); any other origin gets 403. A non-loopback `Host` is refused as everywhere else.
+* The Content-Security-Policy allows only the page's own two files (`default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'`), forbids framing, and the page builds everything with `textContent`: text from plugins, skills and flows can never become HTML or script.
+* It lists names, descriptions, the permissions you approved and counts. It never contains tokens, secrets, typed values, page content or profile data.
+
+Tests: `tests/security/dashboard.test.ts`, `tests/integration/dashboard.test.ts`.
 
 ## Reporting
 
