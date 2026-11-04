@@ -135,6 +135,21 @@ const framesPage = (host) => page('Frames fixture', `
 <iframe id="cross" title="cross origin" src="http://${String(host).replace('127.0.0.1', 'localhost')}/frame-form" width="420" height="200"></iframe>`,
 `window.__msgs=[];window.addEventListener('message',e=>window.__msgs.push(e.data));`);
 
+// A web component with an open shadow root (like SmartRecruiters' spl-* forms): an input, a checkbox and a submit that stays disabled until the input has text.
+// Two identical "Add" buttons in the document check that a recorded locator can say which of several equal elements it means.
+const SHADOW = page('Shadow fixture', `
+<shadow-form></shadow-form>
+<button class="add" type="button" onclick="window.__adds.push(1)">Add</button>
+<button class="add" type="button" onclick="window.__adds.push(2)">Add</button>`,
+`window.__saved=[];window.__adds=[];
+customElements.define('shadow-form',class extends HTMLElement{connectedCallback(){
+  const r=this.attachShadow({mode:'open'});
+  r.innerHTML='<label>Shadow email <input id="se" type="text" autocomplete="off"></label><label><input id="rem" type="checkbox"> Remember me</label><button id="sb" type="button" disabled>Save shadow</button>';
+  const i=r.getElementById('se'),b=r.getElementById('sb');
+  i.addEventListener('input',()=>{b.disabled=i.value.length===0;});
+  b.addEventListener('click',()=>window.__saved.push({email:i.value,remember:r.getElementById('rem').checked}));
+}});`);
+
 const json = (res, status, body, headers = {}) => { res.writeHead(status, { 'content-type': 'application/json', ...headers }); res.end(JSON.stringify(body)); };
 const readBody = (req) => new Promise((r) => { const c = []; req.on('data', (d) => c.push(d)); req.on('end', () => r(Buffer.concat(c).toString('utf8'))); });
 const authed = (req) => req.headers.authorization === `Bearer ${DEMO_TOKEN}`;
@@ -158,6 +173,7 @@ export function startDemoSite({ port = 0 } = {}) {
     if (p === '/gate') return html(GATE);
     if (p === '/frame-form') return html(FRAME_FORM);
     if (p === '/frames') return html(framesPage(req.headers.host));
+    if (p === '/shadow') return html(SHADOW);
     if (p === '/signup') return html(SIGNUP);
     if (p === '/tables') return html(TABLES);
     if (p === '/table-frame') return html(TABLE_FRAME);

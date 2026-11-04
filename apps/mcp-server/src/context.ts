@@ -44,7 +44,13 @@ export interface ServerConfig {
   /** Traces double as retrieval memory and fine-tuning data; they never contain input values. */
   knowledge: { traces: boolean; retentionDays: number };
   /** Record the sites agents work on as flows (see docs/FLOWS.md). */
-  flows: { record: boolean };
+  flows: {
+    record: boolean;
+    /** Keep typed personal values (name, e-mail, phone, address...) as parameter defaults. Off by default: those fields become parameters without a value. */
+    storeValues: boolean;
+    /** Addresses never recorded (`host` or `host/pathPrefix`). Unset = the built-in list (mail, feeds, search listings). */
+    ignore?: string[];
+  };
   /** A private, rotating log file with everything the server logs (never page content, typed values or secrets). */
   logging: { file: boolean; retentionDays: number };
   /** CapSkip CAPTCHA solving (off by default). It talks only to a CapSkip app on this machine, and browser_solve_captcha additionally needs YOLO mode on in the extension. */
@@ -129,7 +135,11 @@ export function buildConfig(overrides: Partial<ServerConfig> & { extraAllowDirs?
       },
     },
     knowledge: { traces: overrides.knowledge?.traces ?? process.env.BROWSERFORGE_NO_TRACES !== '1', retentionDays: overrides.knowledge?.retentionDays ?? 90 },
-    flows: { record: overrides.flows?.record ?? process.env.BROWSERFORGE_NO_FLOWS !== '1' },
+    flows: {
+      record: overrides.flows?.record ?? process.env.BROWSERFORGE_NO_FLOWS !== '1',
+      storeValues: overrides.flows?.storeValues ?? process.env.BROWSERFORGE_FLOW_VALUES === '1',
+      ...((overrides.flows?.ignore ?? (process.env.BROWSERFORGE_FLOW_IGNORE ? process.env.BROWSERFORGE_FLOW_IGNORE.split(',').map((s) => s.trim()).filter(Boolean) : undefined)) ? { ignore: overrides.flows?.ignore ?? process.env.BROWSERFORGE_FLOW_IGNORE!.split(',').map((s) => s.trim()).filter(Boolean) } : {}),
+    },
     logging: { file: overrides.logging?.file ?? process.env.BROWSERFORGE_NO_LOG_FILE !== '1', retentionDays: overrides.logging?.retentionDays ?? 14 },
     captcha: {
       enabled: overrides.captcha?.enabled ?? process.env.CAPSKIP_ENABLED === '1',

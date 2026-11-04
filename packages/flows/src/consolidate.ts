@@ -77,8 +77,9 @@ export function consolidate(flows: Flow[], init: { id: string; name: string; now
   const site = flows[0]!.site;
   if (flows.some((f) => f.site !== site)) throw new Error('All flows must be from the same site');
 
-  const usable = flows.filter((f) => f.outcome !== 'failure');
-  const pool = usable.length ? usable : flows;
+  // Failed runs, and runs that were never submitted (dry runs, abandoned ones), are not examples of how the task is done; use them only when nothing else exists.
+  const usable = flows.filter((f) => f.outcome !== 'failure' && f.outcome !== 'dry_run' && f.outcome !== 'incomplete');
+  const pool = usable.length ? usable : flows.filter((f) => f.outcome !== 'failure').length ? flows.filter((f) => f.outcome !== 'failure') : flows;
   const backbone = [...pool].sort((a, b) => Number(b.outcome === 'success') - Number(a.outcome === 'success') || b.steps.length - a.steps.length)[0]!;
   const need = Math.ceil(pool.length / 2);
 

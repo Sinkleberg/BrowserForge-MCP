@@ -6,6 +6,7 @@ export type ErrorCode =
   | 'CANCELLED'
   | 'TAB_NOT_FOUND'
   | 'ELEMENT_NOT_FOUND'
+  | 'ELEMENT_DISABLED'
   | 'STALE_REF'
   | 'NAVIGATION_FAILED'
   | 'APPROVAL_REQUIRED'

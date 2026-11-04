@@ -104,7 +104,7 @@ async function main(): Promise<void> {
     ...(values['decider-url'] || values['decider-model'] || values.decider || values['laya-url'] || values['laya-model']
       ? { decider: { mode: parseMode(values.decider), url: values['decider-url'] ?? '', model: values['decider-model'] ?? '', minConfidence: 0.7, timeoutMs: 90_000, laya: { url: values['laya-url'] ?? '', model: values['laya-model'] ?? '', minConfidence: 0.5 } } }
       : {}),
-    ...(values['no-flows'] ? { flows: { record: false } } : {}),
+    ...(values['no-flows'] ? { flows: { record: false, storeValues: false } } : {}),
     ...(values['no-log-file'] || values['log-retention-days'] ? { logging: { file: !values['no-log-file'], retentionDays: Number(values['log-retention-days'] ?? 14) } } : {}),
     ...(values['no-traces'] || retention ? { knowledge: { traces: !values['no-traces'], retentionDays: retention ?? 90 } } : {}),
     ...(values.capskip || values['capskip-url'] || values['capskip-api-key'] || values['capskip-timeout'] ? {

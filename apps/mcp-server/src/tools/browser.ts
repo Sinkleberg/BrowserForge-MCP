@@ -167,6 +167,8 @@ export function registerBrowserTools(server: McpServer, ctx: ServerContext): voi
       const page = pageFromElements(await call('interactive_elements', { ...a, format: 'table', limit: 150 }, x, { browserId }));
       const before = beforeUrl === undefined ? undefined : { url: beforeUrl, notes: [], rows: (beforeLabels ?? []).map((l) => ({ kind: '', label: l })) };
       const v = verifyOutcome(page, before);
+      // The verdict also labels the flow being recorded in this tab, so a flow says how its task ended.
+      if (v.verdict !== 'unknown') ctx.flows.setOutcome(browserId ?? ctx.hub.resolvePeer().id, v.verdict, a.tabId, 'verify');
       return untrusted('verification', { ...v, url: page.url, notes: page.notes });
     },
   });

@@ -63,6 +63,13 @@ export async function launchFirefox(app: App): Promise<BrowserHandle> {
       await driver.executeScript("var f=document.getElementById('bf-popup-frame');if(f)f.remove()");
     }
   };
+  const findDeep = async (css: string) => {
+    try {
+      return await driver.findElement(By.css(css));
+    } catch {
+      return (await driver.executeScript("function deep(r,s){var e=r.querySelector(s);if(e)return e;var a=r.querySelectorAll('*');for(var i=0;i<a.length;i++){if(a[i].shadowRoot){var f=deep(a[i].shadowRoot,s);if(f)return f;}}return null;}return deep(document,arguments[0]);", css)) as Awaited<ReturnType<typeof driver.findElement>>;
+    }
+  };
   return {
     kind: 'firefox',
     decideApproval: (approve) =>
@@ -87,8 +94,9 @@ export async function launchFirefox(app: App): Promise<BrowserHandle> {
       await driver.get(url);
     },
     evalInPage: async (script) => (await driver.executeScript(`return (function(){${script}})()`)) as never,
-    userFill: async (css, text) => { await driver.findElement(By.css(css)).sendKeys(text); },
-    userClick: async (css) => { await driver.findElement(By.css(css)).click(); },
+    // A person's click or typing, found by CSS; if the page has no such element in the document, look inside open shadow roots (Playwright's CSS already does).
+    userFill: async (css, text) => { await (await findDeep(css)).sendKeys(text); },
+    userClick: async (css) => { await (await findDeep(css)).click(); },
     userPickLast: async (css) => { await (await driver.findElement(By.css(css))).findElement(By.xpath('.//option[last()]')).click(); },
     close: async () => {
       await driver.quit().catch(() => undefined);

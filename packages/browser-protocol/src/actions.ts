@@ -86,7 +86,7 @@ export const ACTIONS = {
     args: z.object({ tabId: TabId, ...Target, text: z.string().max(500).optional(), state: z.enum(['present', 'visible', 'hidden', 'absent']).optional(), timeoutMs: z.number().int().positive().max(120_000).optional() })
       .refine((a) => a.ref || a.selector || a.text, { message: 'Provide ref, selector or text' }),
   },
-  resolve_locator: { readOnly: true, description: 'Find an element from a recorded flow locator and return a ref', args: z.object({ tabId: TabId, locator: z.record(z.string(), z.unknown()), frameUrl: z.string().max(2000).optional() }) },
+  resolve_locator: { readOnly: true, description: 'Find an element from a recorded flow locator and return a ref', args: z.object({ tabId: TabId, locator: z.record(z.string(), z.unknown()), frameUrl: z.string().max(2000).optional(), waitMs: z.number().int().min(0).max(15000).optional(), requireEnabled: z.boolean().optional() }) },
   forms: { readOnly: true, description: 'Discover forms and fields', args: z.object({ tabId: TabId, includeFrames: z.boolean().optional() }) },
   fill_form: {
     readOnly: false,

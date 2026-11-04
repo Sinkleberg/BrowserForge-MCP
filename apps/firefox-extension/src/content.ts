@@ -179,7 +179,14 @@ function riskOfClick(target: Element): string | null {
 }
 
 // ---------- flow capture: describe the element an action used, so it can be replayed or exported later ----------
-const GENERATED_ID = /^(:r[0-9a-z]+:|_r_\w+_|[0-9a-f]{8,}|.*\d{4,}.*|(mui|rc|react|radix|headlessui)[-_:].*)$/i;
+/** Ids made by frameworks change between visits and make bad locators. Kept identical to looksGeneratedId in packages/flows/src/params.ts (tested there). */
+function looksGenerated(id: string): boolean {
+  if (/^(:r[0-9a-z]+:|_r_\w+_|[0-9a-f]{8,})$/i.test(id) || /\d{4,}/.test(id)) return true;
+  if (/^(mui|rc|react|radix|headlessui)[-_:]/i.test(id) || /^(ember\d|yui_|gwt-uid|__bvid__|j_idt\d|ctl\d)/i.test(id)) return true;
+  if (/(^|[-_])\d{2,}([-_]|$)/.test(id)) return true;
+  return /^[a-z0-9]{5,12}$/i.test(id) && (id.match(/[a-z]\d|\d[a-z]/gi) ?? []).length >= 2;
+}
+const GENERATED_ID = { test: looksGenerated };
 
 function implicitRole(el: Element): string | undefined {
   const tag = el.tagName.toLowerCase();
@@ -247,9 +254,65 @@ function computeLocator(el: Element): Json {
   if (el.id && !GENERATED_ID.test(el.id)) loc.id = el.id;
   if (he.name && ['input', 'select', 'textarea', 'button'].includes(tag)) loc.nameAttr = he.name;
   if (text && ['button', 'a', 'summary', 'span', 'div', 'li'].includes(tag) && text.length <= 40) loc.text = text;
+  const shadow = shadowChain(el);
   loc.css = cssPath(el);
-  loc.xpath = xpathOf(el);
+  if (shadow.length) loc.shadow = shadow; // css is relative to the innermost shadow root, and an xpath cannot cross one
+  else loc.xpath = xpathOf(el);
+  if (isDisabled(el)) loc.disabled = true;
+  // When the best strategy matches several elements, say which one this is.
+  for (const [, find] of locatorTries(loc)) {
+    const hits = find();
+    if (!hits.length) continue;
+    const at = hits.indexOf(el);
+    if (hits.length > 1 && at >= 0) loc.nth = at;
+    if (at >= 0) break;
+  }
   return loc;
+}
+
+function isDisabled(el: Element): boolean {
+  return (el as HTMLButtonElement).disabled === true || el.getAttribute('aria-disabled') === 'true' || el.closest('fieldset[disabled]') !== null;
+}
+
+/** The CSS of each open shadow host between the document and this element, outermost first (each one relative to the root it sits in). */
+function shadowChain(el: Element): string[] {
+  const chain: string[] = [];
+  let root = el.getRootNode();
+  while (root instanceof ShadowRoot) {
+    chain.unshift(cssPath(root.host));
+    root = root.host.getRootNode();
+  }
+  return chain;
+}
+
+/** The ways a recorded locator can find its element, best first. Used both to record `nth` and to look the element up again. */
+function locatorTries(loc: Json): [string, () => Element[]][] {
+  const byText = (sel: string, text: string) => deepAll(sel).filter((e) => textOf(e, 200) === text);
+  const tries: [string, () => Element[]][] = [];
+  if (loc.testId) tries.push(['testId', () => deepAll(`[data-testid=${JSON.stringify(loc.testId)}],[data-test=${JSON.stringify(loc.testId)}],[data-qa=${JSON.stringify(loc.testId)}]`)]);
+  if (loc.role && loc.name) tries.push(['role', () => deepAll(INTERACTIVE).filter((e) => (e.getAttribute('role') ?? implicitRole(e)) === loc.role && (labelFor(e) === loc.name || textOf(e, 80) === loc.name))]);
+  if (loc.label) tries.push(['label', () => deepAll('input,select,textarea,[contenteditable],[role=textbox],[role=combobox]').filter((e) => cleanLabelFor(e) === loc.label)]);
+  if (loc.placeholder) tries.push(['placeholder', () => deepAll(`[placeholder=${JSON.stringify(loc.placeholder)}]`)]);
+  if (loc.id) tries.push(['id', () => deepAll(`[id=${JSON.stringify(loc.id)}]`)]);
+  if (loc.nameAttr) tries.push(['name', () => deepAll(`[name=${JSON.stringify(loc.nameAttr)}]`)]);
+  if (loc.text) tries.push(['text', () => byText('button,a,summary,span,div,li', String(loc.text))]);
+  if (loc.css) {
+    tries.push(['css', () => {
+      try {
+        let scope: ParentNode = document;
+        for (const host of (loc.shadow as string[] | undefined) ?? []) {
+          const h = scope.querySelector(host);
+          if (!h?.shadowRoot) return [];
+          scope = h.shadowRoot;
+        }
+        return [...scope.querySelectorAll(String(loc.css))];
+      } catch {
+        return [];
+      }
+    }]);
+  }
+  if (loc.xpath) tries.push(['xpath', () => { try { const r = document.evaluate(String(loc.xpath), document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); return Array.from({ length: r.snapshotLength }, (_, i) => r.snapshotItem(i) as Element); } catch { return []; } }]);
+  return tries;
 }
 
 let flowParts: Json[] = [];
@@ -741,6 +804,8 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
 
   click: (args, approved) => {
     const el = resolveTarget(args);
+    // Before any approval is asked for: a disabled control cannot be clicked, and recording the click would teach a replay to press it.
+    if (isDisabled(el)) throw new CallError('ELEMENT_DISABLED', 'The element is disabled (a submit button often enables only after a required field is filled or a file is uploaded); nothing was clicked');
     const risk = riskOfClick(el);
     if (risk && !approved) throw Object.assign(new CallError('APPROVAL_REQUIRED', risk), { risk });
     // Check first, scroll only if needed: scrolling closes popup menus (e.g. custom dropdown listboxes) before we can click them.
@@ -752,7 +817,8 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
     if (['option', 'combobox', 'menuitem'].includes(role)) pointerClick(el);
     else if (role === 'checkbox' || CAPTCHA_FRAME.test(location.href)) humanClick(el);
     else (el as HTMLElement).click();
-    capture(el, { consequential: Boolean(risk) });
+    const stateful = el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio');
+    capture(el, { consequential: Boolean(risk), ...(stateful ? { state: (el as HTMLInputElement).checked ? 'checked' : 'unchecked' } : {}) });
     return { clicked: true, element: describe(el) };
   },
 
@@ -779,11 +845,11 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
     let cur = base;
     setNativeValue(el, cur);
     for (const ch of text) {
-      el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, composed: true }));
       cur += ch;
       setNativeValue(el, cur);
       el.dispatchEvent(new InputEvent('input', { bubbles: true, data: ch, inputType: 'insertText' }));
-      el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true, composed: true }));
     }
     fire(el, 'change');
     if (args.submit) await pressEnter(el);
@@ -870,7 +936,7 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
       capture(edHost, { consequential: key === 'Enter' && !mods.includes('Shift') });
       return { pressed: key };
     }
-    const init = { key, bubbles: true, cancelable: true, ctrlKey: mods.includes('Control'), shiftKey: mods.includes('Shift'), altKey: mods.includes('Alt'), metaKey: mods.includes('Meta') };
+    const init = { key, bubbles: true, composed: true, cancelable: true, ctrlKey: mods.includes('Control'), shiftKey: mods.includes('Shift'), altKey: mods.includes('Alt'), metaKey: mods.includes('Meta') };
     (el as HTMLElement).focus?.();
     el.dispatchEvent(new KeyboardEvent('keydown', init));
     if (key === 'Enter') await pressEnterDefault(el);
@@ -997,36 +1063,42 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
 
   page_metrics: () => ({ width: window.innerWidth, height: window.innerHeight, scrollHeight: document.documentElement.scrollHeight, scrollY: window.scrollY, dpr: window.devicePixelRatio }),
   /** Find an element from a recorded flow: try each strategy in order, accept the first that matches exactly one visible element, else the first match. */
-  resolve_locator: (args) => {
+  // Finds the element again from a recorded locator. waitMs: keep looking for that long (a form that is still loading); requireEnabled: ignore disabled
+  // controls and wait for one to be enabled (a submit that unlocks after a file is attached). A recorded `nth` picks one of several equal matches.
+  resolve_locator: async (args) => {
     const loc = (args.locator ?? {}) as Json;
-    const byText = (sel: string, text: string, exact = true) => [...document.querySelectorAll(sel)].filter((e) => (exact ? textOf(e, 200) === text : textOf(e, 200).includes(text)));
-    const tries: [string, () => Element[]][] = [];
-    if (loc.testId) tries.push(['testId', () => [...document.querySelectorAll(`[data-testid=${JSON.stringify(loc.testId)}],[data-test=${JSON.stringify(loc.testId)}],[data-qa=${JSON.stringify(loc.testId)}]`)]]);
-    if (loc.role && loc.name) tries.push(['role', () => [...document.querySelectorAll(INTERACTIVE)].filter((e) => (e.getAttribute('role') ?? implicitRole(e)) === loc.role && (labelFor(e) === loc.name || textOf(e, 80) === loc.name))]);
-    if (loc.label) tries.push(['label', () => [...document.querySelectorAll('input,select,textarea,[contenteditable],[role=textbox],[role=combobox]')].filter((e) => cleanLabelFor(e) === loc.label)]);
-    if (loc.placeholder) tries.push(['placeholder', () => [...document.querySelectorAll(`[placeholder=${JSON.stringify(loc.placeholder)}]`)]]);
-    if (loc.id) tries.push(['id', () => [...document.querySelectorAll(`[id=${JSON.stringify(loc.id)}]`)]]);
-    if (loc.nameAttr) tries.push(['name', () => [...document.querySelectorAll(`[name=${JSON.stringify(loc.nameAttr)}]`)]]);
-    if (loc.text) tries.push(['text', () => byText('button,a,summary,span,div,li', String(loc.text))]);
-    if (loc.css) tries.push(['css', () => { try { return [...document.querySelectorAll(String(loc.css))]; } catch { return []; } }]);
-    if (loc.xpath) tries.push(['xpath', () => { try { const r = document.evaluate(String(loc.xpath), document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); return Array.from({ length: r.snapshotLength }, (_, i) => r.snapshotItem(i) as Element); } catch { return []; } }]);
-    let fallback: { how: string; el: Element } | null = null;
-    for (const [how, find] of tries) {
-      const hits = find();
-      if (hits.length === 1) return { ref: refFor(hits[0]!), how, element: describe(hits[0]!) };
-      if (hits.length > 1 && !fallback) fallback = { how, el: hits.find(isVisible) ?? hits[0]! };
+    const deadline = Date.now() + Math.min(Math.max(Number(args.waitMs ?? 0), 0), 15_000);
+    const needEnabled = args.requireEnabled === true;
+    for (;;) {
+      let fallback: { how: string; el: Element; n: number } | null = null;
+      let sawDisabled = false;
+      for (const [how, find] of locatorTries(loc)) {
+        const raw = find();
+        const hits = needEnabled ? raw.filter((h) => !isDisabled(h)) : raw;
+        if (needEnabled && raw.length > hits.length) sawDisabled = true;
+        if (hits.length === 1 && (raw.length === 1 || typeof loc.nth !== 'number')) return { ref: refFor(hits[0]!), how, element: describe(hits[0]!), ambiguous: raw.length };
+        if (raw.length > 1) {
+          const chosen = typeof loc.nth === 'number' ? raw[loc.nth] : undefined;
+          if (chosen && (!needEnabled || !isDisabled(chosen))) return { ref: refFor(chosen), how: `${how} #${loc.nth}`, element: describe(chosen), ambiguous: raw.length };
+          if (hits.length && !fallback) fallback = { how, el: hits.find(isVisible) ?? hits[0]!, n: raw.length };
+        }
+      }
+      if (fallback) return { ref: refFor(fallback.el), how: `${fallback.how} (first of several)`, element: describe(fallback.el), ambiguous: fallback.n };
+      if (Date.now() >= deadline) {
+        if (sawDisabled) throw new CallError('ELEMENT_DISABLED', 'The recorded element is on the page but disabled (a submit often enables only after a required field is filled or a file is uploaded)');
+        throw new CallError('ELEMENT_NOT_FOUND', 'No strategy in the recorded locator matches an element on this page');
+      }
+      await new Promise((r) => setTimeout(r, 150));
     }
-    if (fallback) return { ref: refFor(fallback.el), how: `${fallback.how} (first of several)`, element: describe(fallback.el) };
-    throw new CallError('ELEMENT_NOT_FOUND', 'No strategy in the recorded locator matches an element on this page');
   },
 
   scroll_to: (args) => { window.scrollTo(0, Number(args.y ?? 0)); return { scrollY: window.scrollY }; },
 };
 
 async function pressEnter(el: Element): Promise<void> {
-  el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true, cancelable: true }));
   await pressEnterDefault(el);
-  el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+  el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true, composed: true }));
 }
 async function pressEnterDefault(el: Element): Promise<void> {
   if (el instanceof HTMLInputElement && el.form && !['checkbox', 'radio', 'file'].includes(el.type)) el.form.requestSubmit();
@@ -1080,9 +1152,12 @@ function relay(kind: 'click' | 'fill' | 'select' | 'press' | 'upload', el: Eleme
   try {
     const sensitive = isSensitiveField(el);
     const idx = snap && Date.now() - snap.at < 15_000 ? snap.els.indexOf(el) : -1;
+    const loc = computeLocator(el);
     const data: Json = {
       kind, url: location.href, ...(window !== window.top ? { frameUrl: location.href } : {}),
-      locator: stringsOnly(computeLocator(el)), fieldLabel: cleanLabelFor(el).slice(0, 120) || undefined,
+      locator: stringsOnly(loc),
+      ...(typeof loc.nth === 'number' ? { nth: loc.nth } : {}), ...(Array.isArray(loc.shadow) ? { shadow: (loc.shadow as string[]).slice(0, 8).map((x) => String(x).slice(0, 600)) } : {}),
+      fieldLabel: cleanLabelFor(el).slice(0, 120) || undefined,
       ...(sensitive ? { sensitive: true } : {}),
       ...(idx >= 0 && snap ? { row: idx + 1, table: snap.rows } : {}),
       ...extra,
@@ -1112,34 +1187,53 @@ function applyRecord(v: unknown): void {
 
 function startRecorder(): void {
   const trusted = (e: Event) => rec.on && e.isTrusted;
+  // Events inside an open shadow root reach `document` retargeted to the host: the first entry of the composed path is the real element.
+  const realTarget = (e: Event): EventTarget | null => e.composedPath()[0] ?? e.target;
   const controlOf = (t: EventTarget | null): Element | null => (t instanceof Element ? t.closest(INTERACTIVE) : null);
-  document.addEventListener('pointerdown', (e) => { if (trusted(e)) takeSnapshot(); }, true);
-  document.addEventListener('focusin', (e) => {
-    if (!trusted(e) || !(e.target instanceof Element)) return;
-    takeSnapshot();
-    if (isTextField(e.target) || e.target instanceof HTMLSelectElement || isEditable(e.target)) baseline.set(e.target, fieldValue(e.target));
-  }, true);
-  document.addEventListener('click', (e) => {
-    if (!trusted(e)) return;
-    const el = controlOf(e.target);
-    if (!el || isTextField(el) || el instanceof HTMLSelectElement || isEditable(el) || el.tagName === 'OPTION' || (el instanceof HTMLInputElement && el.type === 'file')) return; // fields are recorded by what they end up holding
-    if (!snap || Date.now() - snap.at > 15_000) takeSnapshot(); // a click made with the keyboard has no pointerdown
-    relay('click', el, { consequential: riskOfClick(el) !== null });
-  }, true);
-  document.addEventListener('change', (e) => {
-    if (!trusted(e) || !(e.target instanceof Element)) return;
-    const el = e.target;
+  const onChange = (e: Event): void => {
+    const el = realTarget(e);
+    if (!trusted(e) || !(el instanceof Element)) return;
     if (el instanceof HTMLInputElement && el.type === 'file') relay('upload', el, { consequential: true });
     else if (isTextField(el) || el instanceof HTMLSelectElement) flushField(el);
+  };
+  // `change` does not cross a shadow boundary, so every shadow root an interaction passes through gets its own listener (the first focus or click inside it comes before any change).
+  const watched = new WeakSet<Node>();
+  const watchRoots = (e: Event): void => {
+    for (const n of e.composedPath()) {
+      if (n instanceof ShadowRoot && !watched.has(n)) {
+        watched.add(n);
+        n.addEventListener('change', onChange, true);
+      }
+    }
+  };
+  document.addEventListener('pointerdown', (e) => { watchRoots(e); if (trusted(e)) takeSnapshot(); }, true);
+  document.addEventListener('focusin', (e) => {
+    watchRoots(e);
+    const t = realTarget(e);
+    if (!trusted(e) || !(t instanceof Element)) return;
+    takeSnapshot();
+    if (isTextField(t) || t instanceof HTMLSelectElement || isEditable(t)) baseline.set(t, fieldValue(t));
   }, true);
+  document.addEventListener('click', (e) => {
+    watchRoots(e);
+    if (!trusted(e)) return;
+    const el = controlOf(realTarget(e));
+    if (!el || isTextField(el) || el instanceof HTMLSelectElement || isEditable(el) || el.tagName === 'OPTION' || (el instanceof HTMLInputElement && el.type === 'file')) return; // fields are recorded by what they end up holding
+    if (!snap || Date.now() - snap.at > 15_000) takeSnapshot(); // a click made with the keyboard has no pointerdown
+    relay('click', el, { consequential: riskOfClick(el) !== null, ...(el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio') ? { state: el.checked ? 'checked' : 'unchecked' } : {}) });
+  }, true);
+  document.addEventListener('change', onChange, true);
   document.addEventListener('focusout', (e) => {
-    if (trusted(e) && e.target instanceof Element && isEditable(e.target) && !isTextField(e.target)) flushField(e.target); // rich-text boxes have no change event
+    const t = realTarget(e);
+    if (trusted(e) && t instanceof Element && isEditable(t) && !isTextField(t)) flushField(t); // rich-text boxes have no change event
   }, true);
   document.addEventListener('keydown', (e) => {
-    if (!trusted(e) || e.key !== 'Enter' || e.isComposing || !(e.target instanceof HTMLInputElement) || !isTextField(e.target)) return;
-    flushField(e.target); // the text first, then the Enter that sends it
-    const f = e.target.form;
-    relay('press', e.target, { key: 'Enter', consequential: Boolean(f && f.querySelector('button:not([type=button]):not([type=reset]),input[type=submit],input[type=image]')) });
+    watchRoots(e);
+    const t = realTarget(e);
+    if (!trusted(e) || e.key !== 'Enter' || e.isComposing || !(t instanceof HTMLInputElement) || !isTextField(t)) return;
+    flushField(t); // the text first, then the Enter that sends it
+    const f = t.form;
+    relay('press', t, { key: 'Enter', consequential: Boolean(f && f.querySelector('button:not([type=button]):not([type=reset]),input[type=submit],input[type=image]')) });
   }, true);
   try {
     void Promise.resolve(api.storage.local.get('record')).then((r: { record?: unknown }) => applyRecord(r?.record)).catch(() => undefined);

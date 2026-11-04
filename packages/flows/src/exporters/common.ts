@@ -46,3 +46,9 @@ export function header(flow: Flow, comment: string): string {
 }
 
 export const stepLabel = (s: FlowStep, i: number): string => oneLine(`step ${i + 1}: ${s.label ?? s.action}`);
+
+/** Selenium and Chrome Recorder cannot address an element inside an open shadow root; Playwright's CSS pierces it. Refuse rather than write a script that cannot find the element. */
+export function refuseShadow(flow: Flow, format: string): void {
+  const i = flow.steps.findIndex((s) => s.locator?.shadow?.length);
+  if (i >= 0) throw new Error(`Step ${i + 1} is inside an open shadow root, which the ${format} format cannot address. Export playwright-ts or playwright-py instead: their CSS locators reach into open shadow DOM.`);
+}

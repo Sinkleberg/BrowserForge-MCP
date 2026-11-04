@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { BUILTIN_EXPORTERS, FlowBuilder, getExporter, looksGeneratedId, looksSensitive, paramName, parseFlow, playwrightCandidates, replaySelectors, seleniumCandidates, type Flow } from '@browserforge/flows';
+import { BUILTIN_EXPORTERS, FlowBuilder, getExporter, looksGeneratedId, looksSensitive, paramName, parseFlow, isBrowseOnly, playwrightCandidates, registrable, scrubFlow, replaySelectors, seleniumCandidates, type Flow } from '@browserforge/flows';
 import { fillWorkflow } from '../../apps/mcp-server/src/plugins/skills.js';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
@@ -12,7 +12,7 @@ beforeAll(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bf-flows-')); });
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 function sample(): Flow {
-  const b = new FlowBuilder({ id: 'f1', site: 'example.test', name: 'Signup', now: new Date('2026-10-30T10:00:00Z') });
+  const b = new FlowBuilder({ id: 'f1', site: 'example.test', name: 'Signup', now: new Date('2026-10-30T10:00:00Z'), storeValues: true });
   b.navigate('https://example.test/signup');
   b.add({ action: 'fill', value: 'Ada', fieldLabel: 'First name', locator: { tag: 'input', label: 'First name', id: 'first', css: '#first', xpath: '//*[@id="first"]' } });
   b.add({ action: 'fill', value: 'S3cret!', fieldLabel: 'Password', sensitive: true, locator: { tag: 'input', label: 'Password', nameAttr: 'pw', css: 'input[name=pw]' } });
@@ -48,12 +48,74 @@ describe('FlowBuilder', () => {
     expect(looksGeneratedId(':r1:')).toBe(true);
     expect(looksGeneratedId('a1b2c3d4e5f6')).toBe(true);
     expect(looksGeneratedId('first-name')).toBe(false);
+    // Generated ids are not worth anchoring a locator on; hand-written ones are.
+    for (const id of ['f363sx', 'spl-form-element_54', 'modal-92-description', 'ctl00_ContentPlaceHolder1_btn', 'j_idt12', 'ember45', 'mui-3', 'k2j4h5g7', '_r_6_', '0123456789ab']) expect(looksGeneratedId(id), id).toBe(true);
+    for (const id of ['step2', 'firstname', 'email', 'inPhone', 'address-line-1', 'first_name', 'login-form', 'cv', 'privacy', 'Conferma']) expect(looksGeneratedId(id), id).toBe(false);
+    expect(registrable('joblink.allibo.com')).toBe('allibo.com');
+    expect(registrable('am.allibo.com')).toBe('allibo.com');
+    expect(registrable('www.example.co.uk')).toBe('example.co.uk');
+    expect(registrable('a.test')).toBe('a.test');
+    expect(registrable('lutech.intervieweb.it')).not.toBe(registrable('carel.intervieweb.it')); // companies' own job boards stay apart
+    expect(registrable('acme.myworkdayjobs.com')).toBe('acme.myworkdayjobs.com');
     const f = sample();
     expect(f.steps.find((s) => s.param === 'password')!.consequential).toBe(true);
     expect(f.steps.find((s) => s.action === 'upload')!.consequential).toBe(true);
     const b = new FlowBuilder({ id: 'y', site: 's' });
     b.add({ action: 'click', url: 'https://s.test/start', locator: { text: 'Go' } });
     expect(b.flow.steps.map((s) => s.action)).toEqual(['navigate', 'click']);
+  });
+
+  it('names parameters after the field when its label is generic, keeps task parameters out of the defaults, and scrubs tokens and e-mail addresses', () => {
+    const b = new FlowBuilder({ id: 'p', site: 's', hints: { first_name: 'Ada', city: 'Messina' } });
+    const fillOf = (value: string, locator: Record<string, string>, fieldLabel?: string) => b.add({ action: 'fill', value, fieldLabel, locator: { tag: 'input', ...locator }, url: 'https://s.test/f?ID=9&t=SECRET&token=abc' });
+    expect(fillOf('0712345678', { label: 'autocompile', nameAttr: 'inPhone' }, 'autocompile').param).toBe('phone');
+    expect(fillOf('Ada', { label: 'autocompile', id: 'x' }, 'autocompile').param).toBe('first_name'); // matches a task parameter
+    expect(fillOf('Messina', { label: 'City' }, 'City').param).toBe('city');
+    expect(fillOf('1999', { label: 'Giorno', nameAttr: 'ctl00_birthYear' }, 'Giorno').param).toBe('giorno');
+    const byName = (n: string) => b.flow.params.find((p) => p.name === n)!;
+    expect(byName('first_name').default).toBeUndefined();
+    expect(byName('city').default).toBeUndefined();
+    expect(byName('phone').default).toBeUndefined(); // looks like a phone number
+    const click = b.add({ action: 'click', locator: { text: 'Mail ada@example.com about 123456789012', css: 'a' }, url: 'https://s.test/x?aid=1&ID=2' });
+    expect(JSON.stringify(b.flow)).not.toMatch(/SECRET|token=abc|ada@example.com|123456789012|aid=1/);
+    expect(click.url).toContain('ID=2');
+  });
+
+  it('records the state a checkbox was left in', () => {
+    const b = new FlowBuilder({ id: 'c', site: 's' });
+    const step = b.add({ action: 'click', state: 'checked', locator: { tag: 'input', label: 'I agree', css: '#agree' }, url: 'https://s.test/f' });
+    expect(step.state).toBe('checked');
+    const code = getExporter('playwright-ts')!.generate(b.flow);
+    expect(code).toContain('.setChecked(true)');
+    expect(getExporter('playwright-py')!.generate(b.flow)).toContain('.set_checked(True)');
+    b.add({ action: 'click', locator: { tag: 'button', role: 'button', name: 'Next' }, url: 'https://s.test/f' });
+    expect(getExporter('playwright-ts')!.generate(b.flow)).toContain('.click()');
+  });
+
+  it('finds recordings that only browsed, and scrubs personal defaults and tokens out of old ones', () => {
+    const b = new FlowBuilder({ id: 'o', site: 's' });
+    b.navigate('https://s.test/a');
+    expect(isBrowseOnly(b.flow)).toBe(true);
+    b.add({ action: 'click', locator: { text: 'Next' }, url: 'https://s.test/a' });
+    expect(isBrowseOnly(b.flow)).toBe(true); // clicking around is still browsing
+    b.add({ action: 'fill', value: 'x', fieldLabel: 'Comment', locator: { label: 'Comment' }, url: 'https://s.test/a' });
+    expect(isBrowseOnly(b.flow)).toBe(false);
+    const old: Flow = { ...b.flow, params: [{ name: 'phone', sensitive: false, label: 'Phone', default: '0712345678' }, { name: 'preferred_language', sensitive: false, default: 'Italian' }, { name: 'pw', sensitive: true, default: 'hunter2' }], steps: [{ action: 'navigate', url: 'https://s.test/a?aid=1&ID=2', ts: 0, label: 'open https://s.test/a?aid=1&ID=2' }] };
+    expect(scrubFlow(old)).toBeGreaterThanOrEqual(4);
+    expect(old.params.map((p) => [p.name, p.default])).toEqual([['phone', undefined], ['preferred_language', 'Italian'], ['pw', undefined]]);
+    expect(JSON.stringify(old)).not.toMatch(/aid=1|hunter2/);
+    expect(scrubFlow(old)).toBe(0); // nothing more to do
+  });
+
+  it('Playwright picks the nth of equal matches, and the formats that cannot reach into a shadow root refuse instead of writing a script that cannot find it', () => {
+    const b = new FlowBuilder({ id: 'n', site: 's', now: new Date('2026-10-30T10:00:00Z') });
+    b.add({ action: 'click', locator: { tag: 'button', role: 'button', name: 'Add', nth: 1, css: 'button.add' }, url: 'https://s.test/f' });
+    expect(getExporter('playwright-ts')!.generate(b.flow)).toContain(`getByRole("button" as any, { name: "Add" }).nth(1)`);
+    expect(getExporter('playwright-py')!.generate(b.flow)).toContain('.get_by_role("button", name="Add").nth(1)');
+    const sh = new FlowBuilder({ id: 'sh', site: 's' });
+    sh.add({ action: 'fill', value: 'x', fieldLabel: 'Email', locator: { tag: 'input', label: 'Email', css: '#e', shadow: ['html > body > my-form'] }, url: 'https://s.test/f' });
+    expect(() => getExporter('playwright-ts')!.generate(sh.flow)).not.toThrow(); // Playwright's CSS pierces open shadow roots
+    for (const f of ['selenium-py', 'selenium-java', 'puppeteer-replay']) expect(() => getExporter(f)!.generate(sh.flow), f).toThrow(/open shadow root.*playwright-ts/);
   });
 
   it('validates flow JSON', () => {
@@ -137,7 +199,7 @@ describe('exporters', () => {
   });
 
   it('Chrome Recorder JSON has the expected step types and selectors, and embeds values only when asked', () => {
-    const b = new FlowBuilder({ id: 'f2', site: 'example.test', name: 'Plain' });
+    const b = new FlowBuilder({ id: 'f2', site: 'example.test', name: 'Plain', storeValues: true });
     b.navigate('https://example.test/signup');
     b.add({ action: 'fill', value: 'Ada', fieldLabel: 'First name', locator: { tag: 'input', label: 'First name', css: '#first' } });
     b.add({ action: 'fill', value: 'S3cret!', fieldLabel: 'Password', sensitive: true, locator: { tag: 'input', css: 'input[name=pw]' } });

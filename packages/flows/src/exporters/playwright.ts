@@ -17,6 +17,8 @@ export function playwrightCandidates(loc: Locator | undefined, root: string, lan
   if (loc.text && !loc.role) out.push(py ? `${root}.get_by_text(${q(loc.text)}, exact=True)` : `${root}.getByText(${q(loc.text)}, { exact: true })`);
   if (loc.css) out.push(`${root}.locator(${q(loc.css)})`);
   if (loc.xpath) out.push(`${root}.locator(${q('xpath=' + loc.xpath)})`);
+  // The recorded `nth` counts matches of the first strategy (the page's own order); Playwright's .nth(n) is that same 0-based position.
+  if (loc.nth !== undefined && out.length) out[0] = `${out[0]}.nth(${loc.nth})`;
   return out;
 }
 
@@ -30,7 +32,7 @@ function tsStep(s: FlowStep, i: number): string[] {
   const what = q(s.label ?? s.action);
   switch (s.action) {
     case 'navigate': return [...lines, `  await page.goto(${q(s.url ?? '')});`];
-    case 'click': return [...lines, ...guard, `  await (await pick(${cands(s.locator)}, ${what})).click();`];
+    case 'click': return [...lines, ...guard, s.state ? `  await (await pick(${cands(s.locator)}, ${what})).setChecked(${s.state === 'checked'});` : `  await (await pick(${cands(s.locator)}, ${what})).click();`];
     case 'fill': return [...lines, ...guard, `  await (await pick(${cands(s.locator)}, ${what})).fill(p(${q(s.param ?? '')}));`];
     case 'upload': return [...lines, ...guard, `  await (await pick(${cands(s.locator)}, ${what})).setInputFiles(p(${q(s.param ?? '')}));`];
     case 'press': return [...lines, ...guard, s.locator ? `  await (await pick(${cands(s.locator)}, ${what})).press(${q(s.key ?? 'Enter')});` : `  await page.keyboard.press(${q(s.key ?? 'Enter')});`];
@@ -98,7 +100,7 @@ function pyStep(s: FlowStep, i: number): string[] {
   const what = q(s.label ?? s.action);
   switch (s.action) {
     case 'navigate': return [...lines, `    page.goto(${q(s.url ?? '')})`];
-    case 'click': return [...lines, ...guard, `    pick(${cands(s.locator)}, ${what}).click()`];
+    case 'click': return [...lines, ...guard, s.state ? `    pick(${cands(s.locator)}, ${what}).set_checked(${s.state === 'checked' ? 'True' : 'False'})` : `    pick(${cands(s.locator)}, ${what}).click()`];
     case 'fill': return [...lines, ...guard, `    pick(${cands(s.locator)}, ${what}).fill(p(${q(s.param ?? '')}))`];
     case 'upload': return [...lines, ...guard, `    pick(${cands(s.locator)}, ${what}).set_input_files(p(${q(s.param ?? '')}))`];
     case 'press': return [...lines, ...guard, s.locator ? `    pick(${cands(s.locator)}, ${what}).press(${q(s.key ?? 'Enter')})` : `    page.keyboard.press(${q(s.key ?? 'Enter')})`];

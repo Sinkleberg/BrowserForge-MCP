@@ -6,22 +6,27 @@ Recording is automatic. Switch it off with `browserforge serve --no-flows` or `B
 
 ## What gets recorded
 
-* One flow per **task**: it starts when the agent first acts on a site, and ends after a consequential step (a submit or send); the next page the agent opens starts a new flow. A flow also ends after 30 idle minutes or when the agent moves to another site.
-* Every click, typed value, chosen option, key press and file upload, with: the page, the element (see below), whether it was consequential, and the iframe it was in.
-* Values you typed become **parameters** named after the field (`first_name`). The value used while recording is kept as the default, **except for sensitive fields** (passwords, card numbers, tokens, anything whose label looks like one): those never have a value in the flow. Passwords are never recorded at all.
-* Files: `~/.config/browserforge/flows/<site>/<time>.json`, private (0600). Unnamed flows are deleted after 30 days; name one with `flow_save` to keep it.
+* One flow per **task, per tab**: agents working in different tabs of one browser never mix. A task starts when the agent first acts on a site and ends after a consequential step (a submit or send); an agent that then opens another job or page (another `ID=`, `/j/<id>` in the address) starts a new flow. A flow also ends after 30 idle minutes. Moving between sibling hosts of one organisation (`joblink.allibo.com` to `am.allibo.com`), or a redirect within five seconds of a click, stays in the same flow (`hosts` lists them).
+* **Named tasks:** bracket a task with `flow_task_begin` / `flow_task_end` and it is one flow whatever the site does in between (hosts, confirmation pages, other jobs). `flow_task_end` records how it went (`success`, `failure`, `incomplete`, `dry_run`); that outcome is final, whatever the automatic page check guesses later.
+* A visit that only looked around (pages opened, links clicked, nothing filled, chosen, uploaded, pressed or submitted) is **not saved**, and neither are private windows or the ignored sites (mail, `accounts.google.com`, the LinkedIn feed, Careerjet listings; change the list with `BROWSERFORGE_FLOW_IGNORE=host,host/path`).
+* Every click, typed value, chosen option, key press and file upload, with: the page, the element (see below), whether it was consequential, and the iframe it was in. A checkbox or radio click remembers the state it left the control in, so a replay only clicks when the state differs.
+* Values you typed become **parameters** named after the field (`first_name`; a generic label such as `autocompile` is skipped in favour of the field's name or id). Pass the task's own values to `flow_task_begin {params}` and a typed value that matches one takes that name and is not stored. **Personal values are not stored:** names, e-mail, phone, birth date, address, links and free text become parameters without a default (you pass them when you replay or export). Harmless short answers ("Yes", "Italian") keep their default. Turn on `BROWSERFORGE_FLOW_VALUES=1` to keep everything, and "Also keep the text I type" does so for what you do yourself in "Record me". Sensitive fields (passwords, card numbers, tokens) never have a value either way.
+* Session tokens (`t`, `aid`, `token`, `session`...) are removed from stored addresses, and e-mail addresses and long numbers from labels and locator names.
+* Files: `~/.config/browserforge/flows/<site>/<time>.json`, private (0600). The file appears with the first step that changes something. Unnamed flows are deleted after 30 days (3 days for an unfinished one with almost nothing in it, and the oldest beyond 50 per site); flows you saved or that ended in `success` are never deleted automatically.
 
 ## Tools
 
 | Tool | |
 |---|---|
-| `flow_list` | Flows, newest first (optionally for one site) |
+| `flow_task_begin` / `flow_task_end` | Bracket one task as one flow, with its parameters, a `dryRun` flag and (at the end) the outcome |
+| `flow_list` | Flows, newest first, with outcome, task name and replay results; filter by site, outcome, saved; `hints` names tasks that succeeded three times and can be merged |
+| `flow_prune` | Report (default) or, with `apply:true`, carry out a tidy-up of old recordings: browsing-only and ignored ones are deleted, personal values and tokens are scrubbed, mixed-job flows are flagged. Saved flows, successes and replayed flows are never deleted |
 | `flow_get` | One flow in full |
 | `flow_save` | Name a flow and keep it |
 | `flow_delete` | |
 | `flow_record` | Turn recording on or off |
 | `flow_export` | Write a script: `playwright-ts`, `playwright-py`, `selenium-py`, `selenium-java`, `puppeteer-replay`, `json` (plus formats from plugins) |
-| `flow_run` | Replay in the connected browser with no model. Approvals still apply; it stops at the first step it cannot do |
+| `flow_run` | Replay in the connected browser with no model. The page looks for each element for up to 3.5 s and ignores disabled ones (a submit that unlocks after a file is attached). Approvals still apply; it stops at the first step it cannot do, reports how each element was found, and counts the run on the flow (`runs`) |
 
 CLI: `browserforge flow list`, `browserforge flow export <id> --format playwright-ts --out flow.ts [--defaults]`.
 
@@ -67,7 +72,7 @@ Doing the same task on the same site again and again (every application, every s
 
 ## How the task ended
 
-A moment after a consequential step (a submit), BrowserForge reads the page's headings and alerts and records whether it shows a confirmation or an error, in English, Italian, French, Spanish and German. That `outcome` (`success` or `failure`) is stored on the flow, counted in the site's knowledge ([SITES.md](SITES.md)) and used to label the run for fine-tuning. It is a keyword check on short page cues, not a guarantee: a page it cannot read leaves the outcome empty. `browser_verify` gives you the same check on demand.
+A moment after a consequential step (a submit), BrowserForge reads the page's headings and alerts and records whether it shows a confirmation or an error, in English, Italian, French, Spanish and German. That `outcome` (`success` or `failure`) is stored on the flow (a later check replaces an earlier one, since an agent may fix the form and submit again; `browser_verify` sets it too, and only the agent's own `flow_task_end` is final). A flow left without ever submitting becomes `incomplete`, counted in the site's knowledge ([SITES.md](SITES.md)) and used to label the run for fine-tuning. It is a keyword check on short page cues, not a guarantee: a page it cannot read leaves the outcome empty. `browser_verify` gives you the same check on demand.
 
 ## Recording yourself ("Record me")
 
@@ -88,5 +93,6 @@ An exporter is `{ format, description, extension, generate(flow, { includeDefaul
 
 * Locators are computed from the live page, so a redesigned site needs a new recording. `flow_run` and the scripts report the step that no longer matches.
 * "Record me" does not see keystrokes inside rich-text editors that have no change event, drag and drop, or hover menus; it records the page you act on, not the sites' own scripts. Use the agent for those.
-* Canvas apps, closed shadow roots and elements inside sandboxed iframes cannot be recorded.
+* Canvas apps, closed shadow roots and elements inside sandboxed iframes cannot be recorded. Elements in **open** shadow roots are recorded with the CSS of their shadow hosts and replayed through them; Playwright exports reach them too, while Selenium and Chrome Recorder exports refuse such a flow (export Playwright instead). When several equal elements match (two "Add" buttons) the locator records which one (`nth`).
+* "Record me" sees the person's own events inside open shadow roots, but only in frames the extension is already running in: iframes are not recorded for the person unless an agent has used them. A click on a disabled control is refused (`ELEMENT_DISABLED`) and not recorded. Autocomplete suggestions and custom dropdown options are still recorded as clicks on the option's text, not as parameters.
 * Custom dropdowns replay as click-opener-then-click-option, which works for most but not all widget libraries.

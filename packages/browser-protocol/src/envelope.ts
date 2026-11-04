@@ -4,7 +4,7 @@ export const PROTOCOL_VERSION = 1;
 
 export const ERROR_CODES = [
   'INVALID_ARGUMENTS', 'UNAUTHORIZED', 'NOT_CONNECTED', 'TIMEOUT', 'CANCELLED', 'TAB_NOT_FOUND',
-  'ELEMENT_NOT_FOUND', 'STALE_REF', 'NAVIGATION_FAILED', 'APPROVAL_REQUIRED', 'APPROVAL_DENIED', 'PAUSED',
+  'ELEMENT_NOT_FOUND', 'ELEMENT_DISABLED', 'STALE_REF', 'NAVIGATION_FAILED', 'APPROVAL_REQUIRED', 'APPROVAL_DENIED', 'PAUSED',
   'STOPPED', 'UNSUPPORTED', 'PERMISSION_DENIED', 'PATH_NOT_ALLOWED', 'NOT_FOUND', 'LIMIT_EXCEEDED',
   'GENERATION_FAILED', 'INTERNAL',
 ] as const;
@@ -126,6 +126,11 @@ export const HumanActionEventSchema = z.object({
     url: z.string().max(4000),
     frameUrl: z.string().max(4000).optional(),
     locator: z.record(z.string().max(30), z.string().max(600)).optional(),
+    /** Which of several equal matches the element is (0-based), and the CSS of the open shadow hosts around it, outermost first. */
+    nth: z.number().int().min(0).max(10000).optional(),
+    shadow: z.array(z.string().max(600)).max(8).optional(),
+    /** A click on a checkbox or radio: the state it left the control in. */
+    state: z.enum(['checked', 'unchecked']).optional(),
     fieldLabel: z.string().max(120).optional(),
     value: z.string().max(5000).optional(),
     key: z.string().max(30).optional(),

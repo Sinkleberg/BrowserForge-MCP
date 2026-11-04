@@ -121,6 +121,67 @@ describe('verification', () => {
   });
 });
 
+describe('flow tasks', () => {
+  it('brackets one task as a flow, lets browser_verify label it, and keeps the agent outcome final', async () => {
+    fake.onRequest = (req) => {
+      if (req.action === 'fill_field') return { filled: true, _flow: [{ locator: { tag: 'input', label: 'Email', css: '#e' }, fieldLabel: 'Email', pageUrl: 'https://task.test/apply', tabId: 1 }] };
+      if (req.action === 'interactive_elements') return { url: 'https://task.test/apply', title: 'Apply', rows: [], notes: ['Thank you, we have received your application'] };
+      return baseHandler(req);
+    };
+    try {
+      const begin = (await stack.call('flow_task_begin', { name: 'Apply: Task Inc', tabId: 1, params: { email: 'ada@example.com' } })).data;
+      expect(begin.taskId).toBeTruthy();
+      await stack.call('browser_fill_field', { ref: '1:1', value: 'ada@example.com', tabId: 1 });
+      expect((await stack.call('browser_verify', { tabId: 1 })).data.data.verdict).toBe('success');
+      const end = (await stack.call('flow_task_end', { taskId: begin.taskId, outcome: 'dry_run', note: 'not submitted' })).data;
+      expect(end.written).toBe(true);
+      const f = stack.app.ctx.flows.get(end.flowId)!;
+      expect(f).toMatchObject({ name: 'Apply: Task Inc', site: 'task.test', outcome: 'dry_run', outcomeBy: 'agent', task: { note: 'not submitted' } });
+      expect(f.params[0]).toMatchObject({ name: 'email' });
+      expect(f.params[0]!.default).toBeUndefined();
+      expect(JSON.stringify(f)).not.toContain('ada@example.com');
+      expect((await stack.call('flow_task_end', { taskId: begin.taskId, outcome: 'failure' })).data.error.message).toMatch(/No open task/);
+    } finally {
+      fake.onRequest = baseHandler;
+    }
+  });
+
+  it('records how a replay went on the flow', async () => {
+    const f = flowOf((b) => { fillEmail(b); submit(b); });
+    const run = (await stack.call('flow_run', { id: f.id, params: { email: 'ada@example.com' } })).data;
+    expect(typeof run.ok).toBe('boolean');
+    expect(stack.app.ctx.flows.get(f.id)!.runs).toMatchObject({ count: 1 });
+  });
+});
+
+describe('flow list and prune tools', () => {
+  const store = (outcome: Flow['outcome'] | undefined, steps: (b: FlowBuilder) => void): Flow => {
+    const b = new FlowBuilder({ id: 'listing.test/pending', site: 'listing.test', now: new Date() });
+    b.navigate('https://listing.test/start');
+    steps(b);
+    return stack.app.ctx.flows.store({ ...b.flow, ...(outcome ? { outcome } : {}) });
+  };
+  it('filters by outcome, limits the answer, hints at merging, and only prunes when told to', async () => {
+    for (let i = 0; i < 3; i++) store('success', (b) => { fillEmail(b); submit(b); });
+    store('failure', (b) => { fillEmail(b); submit(b); });
+    const browsing = store(undefined, () => undefined);
+    const ok = (await stack.call('flow_list', { site: 'listing.test', outcome: 'success', limit: 2 })).data;
+    expect(ok).toMatchObject({ total: 3, shown: 2 });
+    expect(ok.flows.every((f: any) => f.outcome === 'success')).toBe(true);
+    expect(ok.hints).toEqual(expect.arrayContaining([expect.objectContaining({ site: 'listing.test', count: 3, suggest: 'flow_consolidate' })]));
+    expect((await stack.call('flow_list', { site: 'listing.test', outcome: 'unknown' })).data.total).toBe(1);
+
+    const report = (await stack.call('flow_prune', { site: 'listing.test' })).data;
+    expect(report).toMatchObject({ applied: false, delete: 1 });
+    expect(report.note).toMatch(/apply/);
+    expect(stack.app.ctx.flows.get(browsing.id)).toBeDefined();
+    const done = (await stack.call('flow_prune', { site: 'listing.test', apply: true })).data;
+    expect(done).toMatchObject({ applied: true, delete: 1 });
+    expect(stack.app.ctx.flows.get(browsing.id)).toBeUndefined();
+    expect((await stack.call('flow_list', { site: 'listing.test' })).data.total).toBe(4); // the four real tasks stay
+  });
+});
+
 describe('flows to workflows', () => {
   it('merges recordings, turns the result into a skill, and runs it with the values you give', async () => {
     const one = flowOf((b) => { fillEmail(b); fillPw(b); submit(b); });

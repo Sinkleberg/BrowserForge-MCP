@@ -342,7 +342,7 @@ async function callContent(tab: chrome.tabs.Tab, op: string, args: Record<string
 // ---------- iframes ----------
 // Content scripts are injected on demand into each frame we need. A ref is "<epoch>:<n>" where the epoch identifies the frame's
 // content script, so we remember which frame owns which epoch and send ref-based calls straight there.
-const MAX_FRAMES = 6;
+const MAX_FRAMES = 12;
 const frameByEpoch = new Map<string, { tabId: number; frameId: number }>();
 function rememberEpoch(epoch: unknown, tabId: number, frameId: number): void {
   if (typeof epoch !== 'string' || !epoch) return;
@@ -622,7 +622,9 @@ async function runAction(action: string, rawArgs: Record<string, unknown>, signa
         const { frameUrl, ...inner } = rest as { frameUrl?: string };
         let frameId = 0;
         if (typeof frameUrl === 'string' && frameUrl) {
-          const hit = (await childFrames(tab.id!)).find((f) => f.url === frameUrl) ?? (await childFrames(tab.id!)).find((f) => f.url.split('#')[0] === frameUrl.split('#')[0]);
+          const frames = await childFrames(tab.id!);
+          const bare = (u: string) => u.split(/[?#]/)[0];
+          const hit = frames.find((f) => f.url === frameUrl) ?? frames.find((f) => f.url.split('#')[0] === frameUrl.split('#')[0]) ?? frames.find((f) => bare(f.url) === bare(frameUrl)); // tokens in the query change on every visit
           if (!hit) throw new ActionError('ELEMENT_NOT_FOUND', `The recorded iframe (${frameLabel(frameUrl)}) is not on this page`);
           frameId = hit.frameId;
         }
@@ -632,7 +634,7 @@ async function runAction(action: string, rawArgs: Record<string, unknown>, signa
       } else if (['interactive_elements', 'forms', 'page_text', 'tables'].includes(op)) out = await callWithFrames(tab, op, rest, signal);
       else out = await callContent(tab, op, rest, signal, false, frameFor(tab.id!, rest));
       // Frames only know their own address; the flow belongs to the page the tab is showing.
-      if (out && typeof out === 'object' && Array.isArray((out as Json)._flow)) for (const part of (out as Json)._flow as Json[]) part.pageUrl = tab.url;
+      if (out && typeof out === 'object' && Array.isArray((out as Json)._flow)) for (const part of (out as Json)._flow as Json[]) Object.assign(part, { pageUrl: tab.url, tabId: tab.id, openerTabId: tab.openerTabId, incognito: tab.incognito === true });
       const mutating = !ACTIONS[action].readOnly;
       if (mutating) emitActivity({ action, summary: `${action} on ${hostOf(tab.url)}${args.ref ? ` (${args.ref})` : ''}`, tabId: tab.id, outcome: 'ok' });
       return out;
@@ -773,6 +775,9 @@ api.runtime.onMessage.addListener(((msg: any, sender: any) => {
     data: {
       at: now, tabId: sender.tab.id, kind, url: cut(d.url, 4000), frameUrl: cut(d.frameUrl, 4000), locator, fieldLabel: cut(d.fieldLabel, 120), key: cut(d.key, 30),
       sensitive: d.sensitive === true || undefined, consequential: d.consequential === true || undefined, custom: d.custom === true || undefined,
+      nth: Number.isInteger(d.nth) && d.nth >= 0 && d.nth <= 10000 ? d.nth : undefined,
+      shadow: Array.isArray(d.shadow) && d.shadow.length ? d.shadow.slice(0, 8).map((x: unknown) => String(x).slice(0, 600)) : undefined,
+      state: d.state === 'checked' || d.state === 'unchecked' ? d.state : undefined,
       row: Number.isInteger(d.row) && d.row > 0 && table && d.row <= table.length ? d.row : undefined, table: Number.isInteger(d.row) ? table : undefined,
       value: s.recordValues && d.sensitive !== true && kind !== 'upload' ? cut(d.value, 5000) : undefined,
       task: s.recordTask || undefined,

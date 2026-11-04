@@ -19,6 +19,12 @@ export interface Locator {
   text?: string;
   css?: string;
   xpath?: string;
+  /** Several elements match the best strategy: this one is the nth (0-based, document order, inside open shadow roots too). */
+  nth?: number;
+  /** The element lives in open shadow roots: the CSS of each shadow host, outermost first. `css` is then relative to the innermost root and there is no xpath. */
+  shadow?: string[];
+  /** The element was disabled when it was recorded (informational: a replay waits for it to be enabled). */
+  disabled?: boolean;
 }
 
 export type StepAction = 'navigate' | 'click' | 'fill' | 'select' | 'press' | 'upload';
@@ -34,6 +40,8 @@ export interface FlowStep {
   key?: string;
   /** select on a custom dropdown (role=combobox): click the opener, then click the option with this text. */
   custom?: boolean;
+  /** click on a checkbox or radio: the state it left the control in, so a replay only clicks when the state differs. */
+  state?: 'checked' | 'unchecked';
   /** The step needed human approval in BrowserForge (submit, send, password, upload...). Exported scripts stop here unless FLOW_CONFIRM=1. */
   consequential?: boolean;
   /** The element lives in an iframe whose address contains this. */
@@ -52,6 +60,27 @@ export interface FlowParam {
   label?: string;
 }
 
+/** What an agent or script said it was doing (flow_task_begin). Values of the task's parameters are never stored here. */
+export interface FlowTask {
+  name: string;
+  dryRun?: boolean;
+  tags?: string[];
+  note?: string;
+  startUrl?: string;
+}
+
+/** What happened when this flow was replayed with flow_run. */
+export interface FlowRuns {
+  count: number;
+  ok: number;
+  lastAt: string;
+  lastFailedStep?: number;
+}
+
+export type FlowOutcome = 'success' | 'failure' | 'incomplete' | 'dry_run';
+/** Who set the outcome: the page-wording check ("auto"), browser_verify, a flow_run, or the agent that ran the task. Later ones outrank earlier ones. */
+export type OutcomeBy = 'auto' | 'run' | 'verify' | 'agent';
+
 export interface Flow {
   version: typeof FLOW_VERSION;
   id: string;
@@ -62,8 +91,14 @@ export interface Flow {
   saved?: boolean;
   /** Who produced the steps: an agent's tool calls, or the person using the browser. */
   source?: 'agent' | 'human';
-  /** How the task ended, judged from the page after the last submit. Absent when unknown. */
-  outcome?: 'success' | 'failure';
+  /** How the task ended, judged from the page after the last submit. Absent when unknown. "incomplete": left without ever submitting. */
+  outcome?: FlowOutcome;
+  outcomeBy?: OutcomeBy;
+  /** Set when the recording was bracketed by flow_task_begin / flow_task_end. */
+  task?: FlowTask;
+  runs?: FlowRuns;
+  /** Every host the task touched when it crossed from one to another (a job board, then the employer's form). `site` is the first. */
+  hosts?: string[];
   /** Set on flows built from several recordings by consolidate(). */
   derivedFrom?: string[];
   params: FlowParam[];

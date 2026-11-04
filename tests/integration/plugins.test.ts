@@ -188,7 +188,7 @@ describe('a running server with plugins', () => {
       `export default definePlugin({ tools: [], exporters: [{ format: 'step-count', description: 'counts steps', extension: 'txt', generate: (f) => 'steps=' + f.steps.length }] });`,
     );
     const s = await stackWith(exp);
-    s.app.ctx.flows.handle('b1', 'click', {}, {}, [{ url: 'https://a.test/x', locator: { tag: 'button', text: 'Go' } }]);
+    s.app.ctx.flows.handle('b1', 'type', { text: 'hi' }, {}, [{ url: 'https://a.test/x', locator: { tag: 'input', label: 'Name', css: '#n' }, fieldLabel: 'Name' }]);
     const id = (await s.call('flow_list')).data.flows[0].id;
     const r = await s.call('flow_export', { id, format: 'step-count' });
     expect(r.data).toMatchObject({ format: 'step-count', code: 'steps=2' });

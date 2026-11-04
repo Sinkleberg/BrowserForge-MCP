@@ -28,6 +28,19 @@ describe('consolidate', () => {
     expect(r.flow.steps.at(-1)!.consequential).toBe(true);
   });
 
+  it('does not learn from dry runs or abandoned recordings when a real run exists, but falls back to them when nothing else does', () => {
+    const dry = flow('shop.test/20261030T100001', (b) => { email(b); name(b); b.add({ action: 'click', locator: { text: 'Preview only' }, url: URL_ }); submit(b); }, { outcome: 'dry_run' });
+    const abandoned = flow('shop.test/20261030T100002', (b) => { email(b); name(b); b.add({ action: 'click', locator: { text: 'Left halfway' }, url: URL_ }); }, { outcome: 'incomplete' });
+    const real = flow('shop.test/20261030T100003', (b) => { email(b); submit(b); });
+    const r = consolidate([dry, abandoned, real], { id: 'shop.test/x', name: 'n' });
+    expect(r.flow.derivedFrom).toEqual([real.id]);
+    expect(r.flow.steps.some((s) => /Preview only|Left halfway/.test(s.label ?? ''))).toBe(false);
+    const only = consolidate([dry, abandoned], { id: 'shop.test/y', name: 'n' });
+    expect(only.flow.derivedFrom).toEqual([dry.id, abandoned.id]);
+    const failedToo = consolidate([dry, flow('shop.test/20261030T100009', (b) => { email(b); }, { outcome: 'failure' })], { id: 'shop.test/z', name: 'n' });
+    expect(failedToo.flow.derivedFrom).toEqual([dry.id]); // a failure is the last thing to learn from
+  });
+
   it('ignores failed recordings, and prefers a successful one as the backbone', () => {
     const bad = flow('shop.test/20261030T100001', (b) => { email(b); name(b); b.add({ action: 'click', locator: { text: 'Wrong turn' }, url: URL_ }); submit(b); }, { outcome: 'failure' });
     const good1 = flow('shop.test/20261030T100002', (b) => { email(b); submit(b); }, { outcome: 'success' });

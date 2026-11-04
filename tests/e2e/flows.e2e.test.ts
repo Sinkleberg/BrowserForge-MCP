@@ -57,7 +57,8 @@ describe.each(kinds)('flows: record, replay and export — %s', (kind) => {
     const id = list[0].id as string;
     const flow = inner(await ok('flow_get', { id }));
     expect(flow.steps.map((s: any) => s.action)).toEqual(['navigate', 'fill', 'fill', 'select', 'click']);
-    expect(flow.params.map((p: any) => [p.name, p.default])).toEqual([['first_name', 'Ada'], ['last_name', 'Lovelace'], ['birth_month', 'July']]);
+    // Personal values (a name, a birth month) are named parameters without a stored value.
+    expect(flow.params.map((p: any) => [p.name, p.default])).toEqual([['first_name', undefined], ['last_name', undefined], ['birth_month', undefined]]);
     expect(flow.steps.at(-1).consequential).toBe(true);
     expect(JSON.stringify(flow.steps[1].locator)).toMatch(/First name/);
     await ok('flow_save', { id, name: 'Signup demo' });
@@ -65,7 +66,7 @@ describe.each(kinds)('flows: record, replay and export — %s', (kind) => {
 
     // 3. Replay without any model: new values, the submit still needs the human.
     const before = stack.demo.signups.length;
-    const replay = stack.call('flow_run', { id, params: { first_name: 'Grace', last_name: 'Hopper' } });
+    const replay = stack.call('flow_run', { id, params: { first_name: 'Grace', last_name: 'Hopper', birth_month: 'July' } });
     // The replay navigates the tab, which would destroy a popup opened too early: wait until it is parked on the Submit approval.
     const dbg = (m: string) => process.env.BF_DEBUG && console.log('PHASE', m);
     dbg('replay started');
@@ -92,7 +93,7 @@ describe.each(kinds)('flows: record, replay and export — %s', (kind) => {
     const esbuild = path.join(ROOT, 'node_modules/.bin/esbuild');
     const out = path.join(scratch, 'flow.mjs');
     execFileSync(esbuild, [exported.written, '--bundle=false', '--format=esm', `--outfile=${out}`, '--log-level=error'], { stdio: 'pipe' });
-    const env = { ...process.env, HEADLESS: '1', BROWSER_PATH: findChromium(), FLOW_PARAM_FIRST_NAME: 'Katherine' };
+    const env = { ...process.env, HEADLESS: '1', BROWSER_PATH: findChromium(), FLOW_PARAM_FIRST_NAME: 'Katherine', FLOW_PARAM_LAST_NAME: 'Lovelace', FLOW_PARAM_BIRTH_MONTH: 'July' };
     const run = async (extra: Record<string, string>) => {
       try {
         const r = await execAsync('node', [out], { env: { ...env, ...extra }, timeout: 90_000, cwd: scratch });
@@ -108,7 +109,7 @@ describe.each(kinds)('flows: record, replay and export — %s', (kind) => {
     expect(stack.demo.signups.length).toBe(count);
     const confirmed = await run({ FLOW_CONFIRM: '1' });
     expect(confirmed.code, confirmed.out).toBe(0);
-    expect(stack.demo.signups.at(-1)).toEqual({ first: 'Katherine', last: 'Lovelace', month: 'July' }); // parameter override + recorded defaults
+    expect(stack.demo.signups.at(-1)).toEqual({ first: 'Katherine', last: 'Lovelace', month: 'July' }); // every value comes from a parameter
   });
 
   it('records and replays controls inside same-origin and cross-origin iframes', async () => {
@@ -150,5 +151,46 @@ describe.each(kinds)('flows: record, replay and export — %s', (kind) => {
     await ok('browser_click', { selector: '#parent-btn' }).catch(() => undefined);
     expect((await flows()).length).toBe(n);
     await ok('flow_record', { on: true });
+  });
+
+  it('records and replays controls inside an open shadow root, tells equal buttons apart, remembers checkbox state, and refuses a disabled button', async () => {
+    const begin = await ok('flow_task_begin', { name: 'Shadow demo' }); // its own flow, whatever was recorded before
+    await ok('browser_navigate', { url: stack.demo.url + '/shadow' });
+    const refs = async () => {
+      const t = inner(await ok('browser_get_interactive_elements', { format: 'table' })).rows as string[];
+      return (label: RegExp, n = 0) => t.filter((r) => label.test(r))[n]!.split(' | ')[3]!;
+    };
+    let ref = await refs();
+    // The submit is disabled until the input has text: nothing is clicked or recorded, and no approval is asked for.
+    const refused = await stack.call('browser_click', { ref: ref(/Save shadow/) });
+    expect(refused.isError).toBe(true);
+    expect(refused.data.error.code).toBe('ELEMENT_DISABLED');
+    await ok('browser_type', { ref: ref(/Shadow email/), text: 'ada@shadow.test' });
+    await ok('browser_click', { ref: ref(/Remember me/) });
+    ref = await refs();
+    await ok('browser_click', { ref: ref(/Save shadow/) });
+    await ok('browser_click', { ref: ref(/\| Add \|/, 1) });
+    expect(await browser.evalInPage<any[]>('return window.__saved')).toEqual([{ email: 'ada@shadow.test', remember: true }]);
+    expect(await browser.evalInPage<number[]>('return window.__adds')).toEqual([2]);
+
+    const end = await ok('flow_task_end', { taskId: begin.taskId, outcome: 'success' });
+    const flow = inner(await ok('flow_get', { id: end.flowId }));
+    const step = (re: RegExp) => flow.steps.find((s: any) => re.test(s.label ?? ''));
+    expect(step(/Shadow email/).locator.shadow).toHaveLength(1);
+    expect(step(/Shadow email/).locator.shadow[0]).toMatch(/shadow-form$/);
+    expect(step(/Shadow email/).locator.xpath).toBeUndefined(); // an xpath cannot cross a shadow root
+    expect(step(/Remember me/).state).toBe('checked');
+    expect(flow.steps.filter((s: any) => /"Add"/.test(s.label ?? '')).map((s: any) => s.locator.nth)).toEqual([1]);
+    expect(flow.steps.some((s: any) => /Save shadow/.test(s.label ?? '') && s.locator.disabled)).toBe(false); // it was enabled when clicked
+    expect(flow).toMatchObject({ outcome: 'success', outcomeBy: 'agent' });
+
+    // Replay on a fresh page with another value: the shadow input is found through its host, the checkbox is only clicked when needed, the right "Add" is pressed.
+    await ok('browser_navigate', { url: stack.demo.url + '/shadow' });
+    const run = await ok('flow_run', { id: end.flowId, params: { shadow_email: 'grace@shadow.test' } });
+    expect(run).toMatchObject({ ok: true });
+    expect(await browser.evalInPage<any[]>('return window.__saved')).toEqual([{ email: 'grace@shadow.test', remember: true }]);
+    expect(await browser.evalInPage<number[]>('return window.__adds')).toEqual([2]);
+    expect(inner(await ok('flow_get', { id: end.flowId })).runs).toMatchObject({ count: 1, ok: 1 });
+    expect((await ok('flow_export', { id: end.flowId, format: 'playwright-ts', path: path.join(stack.home, 'exports', 'shadow.ts') })).code).toContain('setChecked(true)');
   });
 });

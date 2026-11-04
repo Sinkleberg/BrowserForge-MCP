@@ -61,7 +61,7 @@ export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: 
     extraExporters: [],
     pluginStore: new PluginStore(config.configDir),
     plugins: emptyRegistry(),
-    flows: new FlowRecorder(path.join(config.configDir, 'flows'), { enabled: config.flows.record }, Date.now, (site, id) => ctx.knowledge.sites.addFlow(site, id)),
+    flows: new FlowRecorder(path.join(config.configDir, 'flows'), { enabled: config.flows.record, storeValues: config.flows.storeValues, ...(config.flows.ignore ? { ignore: config.flows.ignore } : {}) }, Date.now, (site, id) => ctx.knowledge.sites.addFlow(site, id)),
     analyses: new AnalysisStore<AnalysisReport>(),
     profiles: new ProfileStore(path.join(config.configDir, 'profiles.json')),
     asks: new AskQueue(),
@@ -119,7 +119,7 @@ export function createApp(overrides: Partial<ServerConfig> & { extraAllowDirs?: 
       if (v.verdict === 'unknown') return;
       const host = SiteStore.hostOf(o.pageUrl || page.url);
       if (host) ctx.knowledge.sites.outcome(host, v.verdict);
-      ctx.flows.setOutcome(o.flowKey, v.verdict);
+      ctx.flows.setOutcome(o.flowKey, v.verdict, o.tabId);
       if (o.runId) ctx.knowledge.traces.label(o.runId, v.verdict === 'success' ? 'good' : 'bad', `auto: ${v.signals.join('; ')}`.slice(0, 300), 'auto');
       logger.info('task outcome', { browser: o.browserId, host, verdict: v.verdict, signals: v.signals.join('; ') });
     } catch {

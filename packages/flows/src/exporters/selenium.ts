@@ -1,5 +1,5 @@
 import type { Exporter, Flow, FlowStep, Locator } from '../schema.js';
-import { defaultsOf, frameMatch, header, q, stepLabel } from './common.js';
+import { defaultsOf, frameMatch, header, q, refuseShadow, stepLabel } from './common.js';
 
 const xq = (s: string): string => (s.includes("'") ? `concat('${s.split("'").join(`', "'", '`)}')` : `'${s}'`);
 
@@ -46,6 +46,7 @@ export const seleniumPy: Exporter = {
   description: 'Selenium script in Python (run with: python flow.py)',
   extension: 'py',
   generate(flow: Flow, opts) {
+    refuseShadow(flow, 'selenium-py');
     return `${header(flow, '#')}
 import json
 import os
@@ -151,6 +152,7 @@ export const seleniumJava: Exporter = {
   description: 'Selenium class in Java (compile with the selenium-java jars; run: java Flow)',
   extension: 'java',
   generate(flow: Flow, opts) {
+    refuseShadow(flow, 'selenium-java');
     const d = defaultsOf(flow, opts);
     return `${header(flow, '//')}
 import java.time.Duration;

@@ -1,5 +1,5 @@
 import type { Exporter, Flow, FlowStep, Locator } from '../schema.js';
-import { defaultsOf } from './common.js';
+import { defaultsOf, refuseShadow } from './common.js';
 
 /** Chrome DevTools Recorder selectors: each entry is one alternative way to find the element. */
 export function replaySelectors(loc: Locator | undefined): string[][] {
@@ -26,6 +26,7 @@ export const puppeteerReplay: Exporter = {
   description: 'Chrome DevTools Recorder / Puppeteer Replay JSON (import into DevTools or run with @puppeteer/replay)',
   extension: 'json',
   generate(flow: Flow, opts) {
+    refuseShadow(flow, 'Chrome Recorder');
     const d = defaultsOf(flow, opts);
     const value = (param?: string) => (param ? d[param] ?? '' : '');
     const steps: Record<string, unknown>[] = [{ type: 'setViewport', width: 1280, height: 800, deviceScaleFactor: 1, isMobile: false, hasTouch: false, isLandscape: true }];

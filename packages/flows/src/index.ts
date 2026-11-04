@@ -2,6 +2,7 @@ export * from './schema.js';
 export * from './params.js';
 export * from './builder.js';
 export * from './consolidate.js';
+export * from './scrub.js';
 export { playwrightTs, playwrightPy, playwrightCandidates } from './exporters/playwright.js';
 export { seleniumPy, seleniumJava, seleniumCandidates } from './exporters/selenium.js';
 export { puppeteerReplay, replaySelectors } from './exporters/replay.js';

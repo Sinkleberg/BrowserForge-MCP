@@ -27,7 +27,7 @@ describe('FlowRecorder.handleHuman', () => {
   it('records the person in their own flow, marked human, with no value unless one was sent', () => {
     const dir = tmp();
     try {
-      const rec = new FlowRecorder(dir, { enabled: true });
+      const rec = new FlowRecorder(dir, { enabled: true, storeValues: true });
       const a = rec.handleHuman('br1', act())!;
       expect(a.isNew).toBe(true);
       expect(a.param).toBe('first_name');
@@ -59,7 +59,7 @@ describe('FlowRecorder.handleHuman', () => {
     try {
       let t = Date.parse('2026-10-31T10:00:00Z');
       const rec = new FlowRecorder(dir, { enabled: true }, () => t);
-      rec.handle('br1', 'navigate', {}, { url: URL_ }, undefined);
+      rec.handle('br1', 'type', { text: 'x' }, {}, [{ url: URL_, locator: { tag: 'input', label: 'Email', css: '#e' }, fieldLabel: 'Email' }]); // an agent really filling the form
       const first = rec.handleHuman('br1', act())!;
       expect(rec.list().filter((f) => f.site === 'jobs.example.com')).toHaveLength(2); // the agent's flow and the person's
       rec.handleHuman('br1', act({ kind: 'click', locator: { role: 'button', name: 'Submit application' }, row: 3, consequential: true }));

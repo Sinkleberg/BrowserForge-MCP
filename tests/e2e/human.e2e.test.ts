@@ -108,6 +108,25 @@ describe.each(kinds)('Record me: the person\'s own actions — %s', (kind) => {
     if (pw) expect(pw).toMatchObject({ sensitive: true });
   });
 
+  it('records what the person does inside an open shadow root (the browser reports those events as coming from the host)', async () => {
+    await browser.popupMessage('setRecord', { on: true, values: true, task: 'Shadow form' });
+    await browser.openPage(stack.demo.url + '/shadow');
+    await settle(900);
+    await browser.userFill('#se', 'ada@shadow.test');
+    await browser.userClick('#rem');
+    await browser.userClick('#sb');
+    const shadowFlow = () => stack.app.ctx.flows.list().map((x) => stack.app.ctx.flows.get(x.id)!).find((f) => f.source === 'human' && f.steps.some((s) => /Shadow email/.test(s.label ?? '')));
+    await waitFor(() => shadowFlow()?.steps.some((s) => s.action === 'click' && /Save shadow/.test(s.label ?? '')), { what: 'the shadow form actions to be recorded', timeoutMs: 15_000 });
+    const flow = shadowFlow()!;
+    const fill = flow.steps.find((s) => s.action === 'fill')!;
+    expect(fill.locator?.label).toBe('Shadow email'); // the input itself, not the <shadow-form> host
+    expect(fill.locator?.shadow).toHaveLength(1);
+    expect(flow.params.find((p) => /shadow_email/.test(p.name))!.default).toBe('ada@shadow.test'); // the person chose to store values
+    expect(flow.steps.find((s) => /Remember me/.test(s.label ?? ''))).toMatchObject({ action: 'click', state: 'checked' });
+    await browser.popupMessage('setRecord', { on: false });
+    await browser.openPage(stack.demo.url + '/signup'); // the next test works on the signup form
+  });
+
   it('stops when the person turns it off', async () => {
     await browser.popupMessage('setRecord', { on: false });
     await settle(700);
