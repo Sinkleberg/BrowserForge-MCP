@@ -61,6 +61,8 @@ for (const f of ['README.md', 'LICENSE', 'CONTRIBUTING.md']) if (fs.existsSync(p
 // 4. The package manifest. Everything is bundled, so there are no dependencies to install.
 fs.writeFileSync(path.join(out, 'package.json'), JSON.stringify({
   name: '@el-makina-ai/browserforge-mcp',
+  // The official MCP Registry checks this against `name` in server.json (see server.json and docs/RELEASE_CHECKLIST.md).
+  mcpName: 'io.github.zoghlamimostafa/browserforge-mcp',
   version,
   description: rootPkg.description,
   license: rootPkg.license,

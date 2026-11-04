@@ -29,3 +29,14 @@
 4. Look inside the tarball (`tar -tzf release/*.tgz`): it must contain no personal files, tokens or logs.
 
 Publishing is yours to do with your own accounts (nothing here publishes): `npm publish release/<the .tgz> --access public` (the package is [`@el-makina-ai/browserforge-mcp`](https://www.npmjs.com/package/@el-makina-ai/browserforge-mcp); the unscoped name `browserforge-mcp` is not used), the extension zips to the Chrome Web Store and to addons.mozilla.org (which signs the Firefox build), then update INSTALL.md to say so.
+
+## Official MCP Registry (and the directories that copy it)
+
+PulseMCP, and others, import from the [Official MCP Registry](https://registry.modelcontextprotocol.io), so this is the one submission worth doing for each release. `server.json` at the repository root describes the server; its `name` must equal `mcpName` in the published npm package (the release script writes it), and its two `version` fields must equal the npm version you published.
+
+1. Set `version` (twice) in `server.json` to the version you are releasing, then `npm run release`.
+2. `npm publish release/<the .tgz> --access public` (needs your npm login). The package must contain `mcpName`: `npm view @el-makina-ai/browserforge-mcp mcpName`.
+3. Install `mcp-publisher` (see the registry's [quickstart](https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/quickstart.mdx)), then `mcp-publisher validate`, `mcp-publisher login github` (as `zoghlamimostafa`, so the name `io.github.zoghlamimostafa/...` is yours) and `mcp-publisher publish`.
+4. Check it appears: `curl "https://registry.modelcontextprotocol.io/v0/servers?search=browserforge"`.
+
+The description in `server.json` is limited to 100 characters.

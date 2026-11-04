@@ -14,7 +14,7 @@ import type { PluginStore } from './plugins/store.js';
 import type { PluginRegistry } from './plugins/types.js';
 import type { CaptchaConfig, CaptchaSolver } from './tools/captcha.js';
 
-export const SERVER_VERSION = '0.2.0';
+export const SERVER_VERSION = '0.2.1';
 export const DEFAULT_PORT = 7345;
 
 export interface ServerConfig {
