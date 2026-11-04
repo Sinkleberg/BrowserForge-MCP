@@ -2,12 +2,14 @@
 // demo site that ships with the repo. The left half of the picture is the browser; the right half is the agent's tool calls.
 //
 //   npm run build            (the script uses the built program and the "chrome-e2e" extension build)
-//   node scripts/demo/record-demo.mjs [output folder]        default: docs/assets  ->  demo.mp4, demo.gif, demo-poster.png
+//   node scripts/demo/record-demo.mjs [output folder] [--scene tour|api]       default: docs/assets, tour
+//     tour -> demo.mp4, demo.gif, demo-poster.png          (fill a form, approve the submit, traffic to OpenAPI, the dashboard)
+//     api  -> demo-api.mp4, demo-api.gif, demo-api-poster.png   (browse a site, get its OpenAPI spec and a Python client, run the client)
 //
 // Needs: Playwright's Chromium (or BF_CHROMIUM=/path/to/chrome), ffmpeg and ffprobe on the PATH.
 // Honest by design: the "agent" is this script's MCP client standing in for Claude Code or Codex, and the person who approves is the
 // script pressing the popup button on a fake site. Nothing on screen is mocked: the tool results, the popup and the dashboard are real.
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,10 +21,14 @@ import { createApp } from '../../apps/mcp-server/dist/app.js';
 import { commit, stage } from '../../apps/mcp-server/dist/plugins/installer.js';
 import { PluginStore } from '../../apps/mcp-server/dist/plugins/store.js';
 import { startDemoSite } from '../../tests/fixtures/demo-site/server.mjs';
-import { cardHtml, panelHtml } from './panel.mjs';
+import { cardHtml, codeHtml, panelHtml } from './panel.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const OUT = path.resolve(process.argv[2] ?? path.join(ROOT, 'docs', 'assets'));
+const ARGS = process.argv.slice(2);
+const SCENE = ARGS.includes('--scene') ? ARGS[ARGS.indexOf('--scene') + 1] : 'tour';
+if (!['tour', 'api'].includes(SCENE)) throw new Error(`Unknown --scene ${SCENE} (use tour or api)`);
+const OUT = path.resolve(ARGS.find((a, i) => !a.startsWith('--') && ARGS[i - 1] !== '--scene') ?? path.join(ROOT, 'docs', 'assets'));
+const NAME = SCENE === 'tour' ? 'demo' : 'demo-api';
 const WORK = fs.mkdtempSync(path.join(os.tmpdir(), 'bf-demo-'));
 const W = 860, H = 720, PANEL_W = 420; // 860 + 420 = 1280
 const FPS = 25;
@@ -117,7 +123,8 @@ async function openPopup() {
   return frame;
 }
 
-// ---------- scene 1: the agent works in your real browser ----------
+// ---------- the tour: scenes 1-4 ----------
+async function tourScenes() {
 await sleep(300);
 scene('1 · The agent works in your real browser', 'It reads the page and fills the form from your profile. Nothing leaves your computer.');
 await sleep(700);
@@ -212,6 +219,92 @@ await tab('Plugins', 'the plugin and what you allowed it to do, in plain words',
 await tab('Skills', 'skills and their ready-made workflows', 3400);
 await tab('Flows', 'every task it did is already a replayable flow', 3600);
 await tab('Overview', 'one place to see the whole install', 2200);
+}
+
+// ---------- the API demo: a website becomes a spec and a working Python client ----------
+async function apiScenes() {
+  await sleep(300);
+  scene('1 · The agent explores a website', 'It opens the shop and clicks around. BrowserForge records the API calls the page makes.');
+  await sleep(900);
+  // Request metadata only: response bodies would attach Chrome's debugger, and Chrome then shows a banner that shrinks the page in the video.
+  await tool('network_configure_capture', { enabled: true }, () => 'capture on for this browser');
+  await sleep(500);
+  await tool('browser_navigate', { url: `${demo.url}/shop` }, () => 'shop loaded');
+  await waitFor(async () => {
+    const d = (await client.callTool({ name: 'network_list_requests', arguments: { urlPattern: '/graphql' } })).content[0].text;
+    return (JSON.parse(d).data?.total ?? 0) >= 1;
+  }, 'shop traffic');
+  await sleep(1600);
+  // The demo shop has two pages: one "Load more" reaches the end (the button then disables itself).
+  await tool('browser_click', { selector: '#more' }, () => 'page 2 of products loaded');
+  await sleep(1500);
+  await tool('network_list_requests', { urlPattern: '/api/' }, (d) => `${d.total} API requests captured`);
+  await sleep(1800);
+
+  scene('2 · Traffic becomes an API spec', 'Endpoints, parameters, pagination and auth are inferred by code, not a model, each with its evidence and confidence.');
+  await sleep(1200);
+  // Only the site's REST API (the demo server also answers unknown paths such as /favicon.ico with JSON, which would look like an endpoint).
+  const analysis = await tool('api_analyze_traffic', { urlPattern: '/api/' }, (d) => `${d.endpoints?.length ?? d.summary?.endpoints ?? '?'} endpoints found`);
+  const aid = analysis.analysisId ?? analysis.id;
+  await sleep(1500);
+  await tool('api_list_endpoints', { analysisId: aid, limit: 6 }, (d) => (d.endpoints ?? d.items ?? []).slice(0, 4).map((e) => e.id).join('  '));
+  await sleep(1500);
+  const spec = await tool('api_generate_openapi', { analysisId: aid, title: 'Demo shop API' }, (d) => {
+    const doc = d.document ?? d.openapi ?? d;
+    return `OpenAPI ${doc.openapi ?? '3.1'}: ${Object.keys(doc.paths ?? {}).length} paths`;
+  });
+  const doc = spec.document ?? spec.openapi ?? spec;
+  const specLines = JSON.stringify({ openapi: doc.openapi, info: doc.info, paths: Object.fromEntries(Object.entries(doc.paths ?? {}).slice(0, 3)) }, null, 2).split('\n').slice(0, 34).join('\n');
+  await page.setContent(codeHtml({ file: 'openapi.json  (generated, excerpt)', code: specLines }));
+  await sleep(4200);
+
+  scene('3 · …and a working Python client', 'Generated with models, retries and pagination, checked by its own tests, then used against the real site.');
+  await sleep(1000);
+  const gen = await tool('api_generate_client', { analysisId: aid, language: 'python', outputDir: 'demo-shop-client', packageName: 'demo_shop', title: 'Demo shop API' },
+    (d) => `python package written; checks: ${(d.checks ?? []).map((c) => `${c.name ?? c.check ?? 'check'} ${c.status ?? (c.ok ? 'ok' : '')}`.trim()).join(', ') || 'passed'}`);
+  const outDir = gen.outputDir ?? gen.written ?? gen.path ?? path.join(home, 'exports', 'demo-shop-client');
+  await sleep(1200);
+  // The client's real public methods, read with Python itself, so the script below calls what was generated.
+  const methods = JSON.parse(sh('python3', ['-I', '-c', [
+    'import inspect, json, sys', `sys.path.insert(0, ${JSON.stringify(outDir)})`, 'from demo_shop import Client',
+    'out = {}',
+    'for n, f in inspect.getmembers(Client, inspect.isfunction):',
+    '    if n.startswith("_"): continue',
+    '    ps = [p for p in inspect.signature(f).parameters.values() if p.name != "self"]',
+    '    out[n] = {"required": [p.name for p in ps if p.default is inspect.Parameter.empty and p.kind != p.KEYWORD_ONLY], "kw": [p.name for p in ps if p.kind == p.KEYWORD_ONLY]}',
+    'print(json.dumps(out))'].join('\n')]));
+  const names = Object.keys(methods);
+  const listOp = names.find((n) => n.startsWith('list_') && /product/.test(n) && methods[n].required.length === 0);
+  const getOp = names.find((n) => n.startsWith('get_') && /product/.test(n) && methods[n].required.length === 1);
+  if (!listOp || !getOp) throw new Error(`Unexpected client methods: ${names.join(', ')}`);
+  const kw = (op, wanted) => Object.entries(wanted).filter(([k]) => methods[op].kw.includes(k)).map(([k, v]) => `${k}=${v}`).join(', ');
+  const clientPy = fs.readFileSync(path.join(outDir, 'demo_shop', 'client.py'), 'utf8').split('\n');
+  const defs = clientPy.filter((l) => /^    def [a-z]/.test(l) && !/def _/.test(l)).map((l) => l.trim().replace(/:$/, ''));
+  const script = [
+    'from demo_shop import Client',
+    '',
+    `shop = Client("${demo.url}")`,
+    `first = shop.${listOp}(${kw(listOp, { page: 1, per_page: 3, category: '"tools"' })})`,
+    'for item in first["data"]:',
+    '    print(item["id"], item["name"], item["price"])',
+    `print(shop.${getOp}(3))`,
+  ].join('\n');
+  fs.writeFileSync(path.join(outDir, 'use_client.py'), script + '\n');
+  await page.setContent(codeHtml({ file: 'demo_shop/client.py  (generated: public methods)', code: ['class Client:', ...defs.slice(0, 12).map((d) => '    ' + d + ': ...')].join('\n') }));
+  line('info', `class Client: ${names.filter((n) => !n.startsWith('iter_')).slice(0, 5).join(', ')}…`);
+  await sleep(4200);
+  line('call', '$ python3 use_client.py');
+  await page.setContent(codeHtml({ file: 'use_client.py', code: script, terminal: 'terminal', output: '$ python3 use_client.py' }));
+  await sleep(1300);
+  // Run it the way a person would: from the client's folder (the generated package sits next to the script). Asynchronously: the demo
+  // site runs in this same process, and a blocking call would stop it from answering the client.
+  const output = (await new Promise((resolve, reject) => execFile('python3', ['use_client.py'], { cwd: outDir, encoding: 'utf8', timeout: 30_000 }, (err, stdout, stderr) => (err ? reject(new Error(`${err.message}\n${stderr}`)) : resolve(stdout))))).trim();
+  line('ret', output.split('\n').slice(0, 3).join('  |  ').slice(0, 150));
+  await page.setContent(codeHtml({ file: 'use_client.py', code: script, terminal: 'terminal', output: `$ python3 use_client.py\n${output}` }));
+  await sleep(4800);
+}
+
+if (SCENE === 'tour') await tourScenes(); else await apiScenes();
 const endT = at();
 await ctx.close(); // finalises the video
 const rawVideo = fs.readdirSync(videoDir).map((f) => path.join(videoDir, f)).filter((f) => f.endsWith('.webm')).sort((a, b) => fs.statSync(b).size - fs.statSync(a).size)[0];
@@ -222,7 +315,8 @@ if (!rawVideo) throw new Error('No video was recorded');
 
 // ---------- the right-hand panel: one picture per event ----------
 fs.mkdirSync(OUT, { recursive: true });
-const dur = Number(sh('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', rawVideo]).trim());
+// The recording keeps running while the browser shuts down: stop shortly after the last event.
+const dur = Math.min(Number(sh('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', rawVideo]).trim()), endT / 1000 + 0.8);
 const renderer = await chromium.launch({ executablePath: findChromium(), headless: true });
 const rp = await renderer.newPage({ viewport: { width: PANEL_W, height: H }, deviceScaleFactor: 1 });
 const panelDir = path.join(WORK, 'panel');
@@ -254,7 +348,7 @@ fs.writeFileSync(path.join(WORK, 'panel.txt'), list.join('\n'));
 const intro = path.join(WORK, 'intro.png');
 const outro = path.join(WORK, 'outro.png');
 const cp = await renderer.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
-await cp.setContent(cardHtml('intro'), { waitUntil: 'load' });
+await cp.setContent(cardHtml('intro', SCENE === 'api' ? { tag: 'Browse a website. Get its API spec and a working client.', chips: ['Real browser traffic', 'OpenAPI 3.1', 'Python · TypeScript · JS · PHP', 'No LLM in the analysis'] } : {}), { waitUntil: 'load' });
 await cp.screenshot({ path: intro });
 await cp.setContent(cardHtml('outro'), { waitUntil: 'load' });
 await cp.screenshot({ path: outro });
@@ -265,25 +359,29 @@ const main = path.join(WORK, 'main.mp4');
 sh('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-i', rawVideo, '-f', 'concat', '-safe', '0', '-i', path.join(WORK, 'panel.txt'),
   '-filter_complex', `[0:v]fps=${FPS},scale=${W}:${H}:flags=lanczos,format=yuv420p[a];[1:v]fps=${FPS},scale=${PANEL_W}:${H},format=yuv420p[b];[a][b]hstack=inputs=2[v]`,
   '-map', '[v]', '-c:v', 'libx264', '-preset', 'slow', '-crf', '22', '-pix_fmt', 'yuv420p', '-t', dur.toFixed(2), main]);
-const video = path.join(OUT, 'demo.mp4');
+const video = path.join(OUT, `${NAME}.mp4`);
 const INTRO = 4, OUTRO = 6, mainDur = Number(sh('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', main]).trim());
 sh('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-loop', '1', '-t', String(INTRO), '-i', intro, '-i', main, '-loop', '1', '-t', String(OUTRO), '-i', outro,
   '-filter_complex', `[0:v]fps=${FPS},format=yuv420p,fade=t=out:st=${INTRO - 0.6}:d=0.6[v0];[1:v]fps=${FPS},format=yuv420p,fade=t=in:st=0:d=0.5[v1];[2:v]fps=${FPS},format=yuv420p,fade=t=in:st=0:d=0.6[v2];[v0][v1][v2]concat=n=3:v=1:a=0[v]`,
   '-map', '[v]', '-c:v', 'libx264', '-preset', 'slow', '-crf', '23', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', video]);
 
 // ---------- a short GIF of the approval scene, for the README ----------
+// tour: the approval scene; api: the generated client being used.
 const s2 = events.find((e) => e.kind === 'scene' && e.title.startsWith('2'));
 const s3 = events.find((e) => e.kind === 'scene' && e.title.startsWith('3'));
-const gif = path.join(OUT, 'demo.gif');
-const from = Math.max(0, s2.t / 1000 - 0.2), len = Math.min(24, (s3.t - s2.t) / 1000);
+const gifStart = SCENE === 'tour' ? s2 : s3;
+const gifEnd = SCENE === 'tour' ? s3.t : endT;
+const gif = path.join(OUT, `${NAME}.gif`);
+const from = Math.max(0, gifStart.t / 1000 - 0.2), len = Math.min(24, (gifEnd - gifStart.t) / 1000);
 const pal = path.join(WORK, 'palette.png');
 const gifFilter = 'fps=10,scale=760:-1:flags=lanczos';
 sh('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-ss', from.toFixed(2), '-t', len.toFixed(2), '-i', main, '-vf', `${gifFilter},palettegen=max_colors=96:stats_mode=diff`, pal]);
 sh('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-ss', from.toFixed(2), '-t', len.toFixed(2), '-i', main, '-i', pal, '-lavfi', `${gifFilter} [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`, gif]);
-sh('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-i', video, '-ss', String(INTRO + (s2.t / 1000) + 5), '-frames:v', '1', path.join(OUT, 'demo-poster.png')]);
+const poster = path.join(OUT, `${NAME}-poster.png`);
+sh('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-i', video, '-ss', String(INTRO + (gifStart.t / 1000) + (SCENE === 'tour' ? 5 : Math.max(1, len - 3))), '-frames:v', '1', poster]);
 
 const kb = (f) => `${(fs.statSync(f).size / 1024 / 1024).toFixed(1)} MB`;
-console.log(`demo.mp4   ${kb(video)}  ${(INTRO + mainDur + OUTRO).toFixed(0)} s   ${pathToFileURL(video).href}`);
-console.log(`demo.gif   ${kb(gif)}  ${len.toFixed(0)} s`);
-console.log(`poster     ${kb(path.join(OUT, 'demo-poster.png'))}`);
+console.log(`${NAME}.mp4   ${kb(video)}  ${(INTRO + mainDur + OUTRO).toFixed(0)} s   ${pathToFileURL(video).href}`);
+console.log(`${NAME}.gif   ${kb(gif)}  ${len.toFixed(0)} s`);
+console.log(`poster     ${kb(poster)}`);
 console.log(`events: ${events.length}, recorded: ${(endT / 1000).toFixed(0)} s, work folder: ${WORK}`);

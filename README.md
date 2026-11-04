@@ -84,6 +84,12 @@ Full instructions: [docs/INSTALL.md](docs/INSTALL.md) · guides in the [wiki](ht
 - *"Fill in the application form from my saved profile, show me a preview, and wait for my approval before submitting."*
 - *"Export the capture as a HAR file with secrets redacted."*
 
+**From a website to a working API client**, in one conversation: the agent browses the shop, BrowserForge analyses the requests it saw (by code, not a model), writes an OpenAPI spec and a Python client that passes its own tests, and the client fetches real data:
+
+<a href="docs/assets/demo-api.mp4"><img src="docs/assets/demo-api.gif" alt="BrowserForge API demo: the agent browses a shop, BrowserForge generates an OpenAPI spec and a Python client, and a short script uses the client to fetch products from the real site" width="760"></a>
+
+<sub><a href="docs/assets/demo-api.mp4"><b>Watch the 41-second API demo (MP4)</b></a>. Recorded on the demo site in this repo with <code>npm run demo:record -- --scene api</code>; a script plays the agent.</sub>
+
 More end-to-end examples: [docs/WORKFLOWS.md](docs/WORKFLOWS.md).
 
 ## Tools

@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrowserForge MCP: the open-source browser infrastructure for AI agents</title>
+<meta name="description" content="Give Claude Code, Codex and any MCP client a real Chrome or Firefox browser. You approve what matters, everything stays on your computer, and the traffic it sees becomes OpenAPI specs and API clients.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="BrowserForge MCP: give your AI agent a real browser">
+<meta property="og:description" content="A Chrome/Firefox extension and local MCP server. Human-approved automation, API reverse engineering, OpenAPI generation and reusable workflows. Local-first, MIT.">
+<meta property="og:url" content="https://zoghlamimostafa.github.io/BrowserForge-MCP/">
+<meta property="og:image" content="https://zoghlamimostafa.github.io/BrowserForge-MCP/assets/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://zoghlamimostafa.github.io/BrowserForge-MCP/assets/social-preview.png">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231a73e8'/%3E%3Cpath d='M22 16h22v8H31v6h11v8H31v12h-9z' fill='white'/%3E%3C/svg%3E">
+<style>
+:root { color-scheme: light dark; --bg:#0b0e16; --bg2:#121827; --card:#161d2e; --line:#283149; --fg:#eef2f8; --muted:#a5b0c4; --accent:#7aa2ff; --ok:#7ee787; }
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body { margin: 0; color: var(--fg); font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "DejaVu Sans", sans-serif; }
+a { color: var(--accent); }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+header.top { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; }
+.brand { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 19px; color: var(--fg); text-decoration: none; }
+.brand svg { width: 34px; height: 34px; }
+nav a { color: var(--muted); text-decoration: none; margin-left: 20px; font-size: 15px; }
+nav a:hover { color: var(--fg); }
+.hero { padding: 56px 0 30px; background: radial-gradient(900px 500px at 15% 0%, #23315c 0%, transparent 70%); }
+h1 { font-size: clamp(34px, 5vw, 58px); line-height: 1.08; margin: 0 0 18px; letter-spacing: -.02em; max-width: 900px; }
+h1 span { color: var(--accent); }
+.lead { font-size: 21px; color: #cfd8e8; max-width: 780px; margin: 0 0 30px; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 10px; font-weight: 650; text-decoration: none; color: #fff; font-size: 16px; }
+.chrome { background: #1a73e8; } .firefox { background: #e8590c; } .win { background: #0067b8; } .gh { background: #24292f; border: 1px solid #3d444d; }
+.btn:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.npm { max-width: 100%; overflow-wrap: anywhere; font: 15px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--ok); background: #05080f; border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; display: inline-block; }
+.note { color: var(--muted); font-size: 14px; margin-top: 10px; }
+video { width: 100%; border-radius: 14px; border: 1px solid var(--line); background: #000; display: block; box-shadow: 0 24px 60px rgba(0,0,0,.45); }
+section { padding: 54px 0; border-top: 1px solid var(--line); }
+h2 { font-size: 32px; margin: 0 0 10px; letter-spacing: -.01em; }
+.sub { color: var(--muted); margin: 0 0 30px; max-width: 760px; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+.card h3 { margin: 0 0 8px; font-size: 19px; }
+.card p { margin: 0; color: #c3ccdc; font-size: 15.5px; }
+.eco { display: grid; gap: 14px; justify-items: center; text-align: center; }
+.eco .row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+.pill { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 18px; min-width: 150px; }
+.pill b { display: block; } .pill small { color: var(--muted); }
+.core { border: 2px solid var(--accent); background: #18223a; border-radius: 16px; padding: 18px; }
+.core > b { font-size: 20px; display: block; margin-bottom: 10px; }
+.arrow { color: var(--muted); font-size: 22px; line-height: 1; }
+.table { overflow-x: auto; }
+table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 15px; }
+th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+td.us { color: var(--ok); font-weight: 600; }
+.steps { counter-reset: s; display: grid; gap: 14px; }
+.step { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px 18px 64px; position: relative; }
+.step::before { counter-increment: s; content: counter(s); position: absolute; left: 20px; top: 16px; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #0b0e16; font-weight: 800; display: grid; place-items: center; }
+code { font: 14.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #05080f; border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
+ul.ticks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+ul.ticks li::before { content: "✓"; color: var(--ok); margin-right: 10px; font-weight: 700; }
+footer { border-top: 1px solid var(--line); padding: 30px 0 50px; color: var(--muted); font-size: 14.5px; }
+footer a { color: var(--muted); margin-right: 18px; }
+@media (max-width: 640px) { nav { display: none; } .lead { font-size: 18px; } }
+</style>
+</head>
+<body>
+<div class="hero">
+  <div class="wrap">
+    <header class="top">
+      <a class="brand" href="#"><svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#1a73e8"/><path d="M22 16h22v8H31v6h11v8H31v12h-9z" fill="#fff"/></svg>BrowserForge MCP</a>
+      <nav><a href="#how">How it works</a><a href="#api">API demo</a><a href="#start">Get started</a><a href="https://github.com/zoghlamimostafa/BrowserForge-MCP/wiki">Docs</a><a href="https://github.com/zoghlamimostafa/BrowserForge-MCP">GitHub</a></nav>
+    </header>
+    <h1>The open-source <span>browser infrastructure</span> for AI agents.</h1>
+    <p class="lead">BrowserForge gives Claude Code, Codex and any MCP client a <b>real Chrome or Firefox browser</b>, your own logged-in session. <b>You approve</b> every submit, payment and upload. Everything runs on your computer, and the traffic it sees becomes <b>OpenAPI specs and API clients</b>.</p>
+    <div class="cta">
+      <a class="btn chrome" href="https://chromewebstore.google.com/detail/browserforge/ihbkpcclcolaeppmfgmndmemjljmiaec">Add to Chrome</a>
+      <a class="btn firefox" href="https://addons.mozilla.org/en-US/firefox/addon/browserforge/">Add to Firefox</a>
+      <a class="btn win" href="https://github.com/zoghlamimostafa/BrowserForge-MCP/releases/latest">Windows installer</a>
+      <a class="btn gh" href="https://github.com/zoghlamimostafa/BrowserForge-MCP">★ Star on GitHub</a>
+    </div>
+    <div class="npm">npm install -g @el-makina-ai/browserforge-mcp</div>
+    <p class="note">Open source, MIT. No account, no cloud, no telemetry. Version 0.2, tested by hand on Linux; Windows covered by CI.</p>
+    <div style="margin-top:34px">
+      <video controls muted playsinline preload="none" poster="assets/demo-poster.png" aria-label="73-second demo: an agent fills a form, the extension asks the person to approve the submit, traffic becomes an OpenAPI spec, and the dashboard shows what is installed">
+        <source src="assets/demo.mp4" type="video/mp4">
+      </video>
+      <p class="note">73 seconds, real browser and real tools on the demo site in the repository. A script plays the agent and the person.</p>
+    </div>
+  </div>
+</div>
+
+<section id="how">
+  <div class="wrap">
+    <h2>More than a browser MCP server</h2>
+    <p class="sub">Three parts, one local program. The agent operates the browser, BrowserForge understands what it sees, and what it learns is kept for next time.</p>
+    <div class="grid3">
+      <div class="card"><h3>Browser control</h3><p>Your real tabs and logins through a WebExtension. Pages are read as a compact table, iframes and open shadow DOM included. Consequential clicks wait for you in the extension popup, and a red STOP halts everything.</p></div>
+      <div class="card"><h3>Network analysis</h3><p>Captured requests become endpoints, parameters, pagination and auth, each labelled observed, inferred or hypothesis with its evidence. Then an OpenAPI 3.1 spec and clients in Python, TypeScript, JavaScript or PHP.</p></div>
+      <div class="card"><h3>Memory and flows</h3><p>Every task is recorded as a flow you can replay with no model or export to Playwright, Selenium or Chrome Recorder. Flows become shareable skills; site notes warn the next agent about obstacles.</p></div>
+    </div>
+    <div class="eco" style="margin-top:40px" aria-label="Ecosystem">
+      <div class="row"><div class="pill"><b>Claude Code</b><small>MCP</small></div><div class="pill"><b>Codex</b><small>MCP</small></div><div class="pill"><b>Local models</b><small>Qwen · Laya</small></div><div class="pill"><b>Any MCP client</b><small>HTTP or stdio</small></div></div>
+      <div class="arrow">↓</div>
+      <div class="core"><b>BrowserForge</b><div class="row"><div class="pill"><b>Browser control</b></div><div class="pill"><b>Network analysis</b></div><div class="pill"><b>Memory &amp; flows</b></div></div></div>
+      <div class="arrow">↓</div>
+      <div class="row"><div class="pill"><b>Reusable skills</b><small>replay with no model</small></div><div class="pill"><b>API clients</b><small>OpenAPI 3.1</small></div><div class="pill"><b>Plugins</b><small>approved permissions</small></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="api">
+  <div class="wrap">
+    <h2>From a website to a working API client</h2>
+    <p class="sub">The agent browses a shop. BrowserForge analyses the requests by code, not a model, writes the OpenAPI spec and a Python client that passes its own tests, and a three-line script uses it to fetch real data.</p>
+    <video controls muted playsinline preload="none" poster="assets/demo-api-poster.png" aria-label="41-second API demo: browse a shop, generate an OpenAPI spec and a Python client, run the client">
+      <source src="assets/demo-api.mp4" type="video/mp4">
+    </video>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>How it is different</h2>
+    <p class="sub">Compared with the usual ways of letting an agent use the web.</p>
+    <div class="table"><table>
+      <thead><tr><th></th><th>Headless automation</th><th>Typical browser MCP bridge</th><th>BrowserForge</th></tr></thead>
+      <tbody>
+        <tr><td>Your real, logged-in session</td><td>No, a fresh profile</td><td>Often</td><td class="us">Yes</td></tr>
+        <tr><td>Approval the agent cannot answer</td><td>No</td><td>Not the focus</td><td class="us">Yes, in the extension, plus STOP</td></tr>
+        <tr><td>"Run any JavaScript" tool</td><td>Yes</td><td>Often</td><td class="us">No, by design</td></tr>
+        <tr><td>Traffic to OpenAPI and clients</td><td>No</td><td>No</td><td class="us">Yes, deterministic</td></tr>
+        <tr><td>Tasks become replayable scripts</td><td>You write them</td><td>No</td><td class="us">Yes: flows, skills, exports</td></tr>
+        <tr><td>Runs only on your computer</td><td>Yes</td><td>Some use a cloud relay</td><td class="us">Yes, 127.0.0.1 only</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">Details and sources: <a href="https://github.com/zoghlamimostafa/BrowserForge-MCP/blob/main/docs/VISION.md">docs/VISION.md</a>.</p>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap">
+    <h2>Get started in three steps</h2>
+    <div class="steps">
+      <div class="step"><b>Install the program.</b> Windows: run the <a href="https://github.com/zoghlamimostafa/BrowserForge-MCP/releases/latest">installer</a>. Elsewhere: <code>npm install -g @el-makina-ai/browserforge-mcp</code>, then <code>browserforge setup</code> and <code>browserforge serve</code>.</div>
+      <div class="step"><b>Add the extension</b> from the <a href="https://chromewebstore.google.com/detail/browserforge/ihbkpcclcolaeppmfgmndmemjljmiaec">Chrome Web Store</a> or <a href="https://addons.mozilla.org/en-US/firefox/addon/browserforge/">Firefox Add-ons</a>, paste the token <code>browserforge setup</code> printed, press Connect.</div>
+      <div class="step"><b>Connect your agent:</b> <code>browserforge print-config claude</code> (or <code>codex</code>) prints the one line to run. Then ask it to open a page.</div>
+    </div>
+    <p class="note">Full guide: <a href="https://github.com/zoghlamimostafa/BrowserForge-MCP/blob/main/docs/INSTALL.md">INSTALL.md</a> · <a href="https://github.com/zoghlamimostafa/BrowserForge-MCP/wiki">Wiki</a> · <a href="https://github.com/zoghlamimostafa/BrowserForge-MCP/blob/main/docs/DASHBOARD.md">Dashboard</a></p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Principles that will not change</h2>
+    <ul class="ticks">
+      <li>Local-first: nothing leaves your computer because of BrowserForge.</li>
+      <li>The human approves consequential actions, in the browser, where the agent cannot answer.</li>
+      <li>Page content is data, never instructions; secrets are redacted.</li>
+      <li>No anti-bot evasion. Honest limits, documented in <a href="https://github.com/zoghlamimostafa/BrowserForge-MCP/blob/main/docs/LIMITATIONS.md">LIMITATIONS.md</a>.</li>
+      <li>Open source, MIT. Plugins and skills welcome.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Build it with us</h2>
+    <p class="sub">Write a plugin or a skill without touching the core, pick a <a href="https://github.com/zoghlamimostafa/BrowserForge-MCP/issues?q=is%3Aopen+label%3A%22good+first+issue%22">good first issue</a>, or share what you automated in <a href="https://github.com/zoghlamimostafa/BrowserForge-MCP/discussions">Discussions</a>. The plan is public on the <a href="https://github.com/users/zoghlamimostafa/projects/1">roadmap board</a>.</p>
+    <a class="btn gh" href="https://github.com/zoghlamimostafa/BrowserForge-MCP">★ Star BrowserForge on GitHub</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a href="https://github.com/zoghlamimostafa/BrowserForge-MCP">GitHub</a><a href="https://github.com/zoghlamimostafa/BrowserForge-MCP/wiki">Wiki</a><a href="https://github.com/zoghlamimostafa/BrowserForge-MCP/blob/main/docs/PRIVACY.md">Privacy</a><a href="https://github.com/zoghlamimostafa/BrowserForge-MCP/blob/main/docs/SECURITY.md">Security</a><a href="https://www.npmjs.com/package/@el-makina-ai/browserforge-mcp">npm</a>
+    <p>BrowserForge MCP · MIT licensed · This page loads no third-party scripts, fonts or trackers.</p>
+  </div>
+</footer>
+</body>
+</html>

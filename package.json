@@ -25,7 +25,8 @@
     "serve": "node apps/mcp-server/dist/cli.js serve",
     "release": "npm run package && node scripts/package-release.mjs",
     "smoke:install": "node scripts/smoke-install.mjs",
-    "demo:record": "node scripts/demo/record-demo.mjs"
+    "demo:record": "node scripts/demo/record-demo.mjs",
+    "metrics": "node scripts/metrics.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
