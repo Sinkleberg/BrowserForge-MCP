@@ -27,8 +27,8 @@ Every release builds the installer on a real Windows machine, installs it silent
 You need [Node.js 22 or newer](https://nodejs.org) and Chrome, Edge, Brave or Firefox.
 
 ```bash
-npm install -g browserforge-mcp
-# or the tarball from https://github.com/zoghlamimostafa/BrowserForge-MCP/releases: npm install -g ./browserforge-mcp-0.2.0.tgz
+npm install -g @el-makina-ai/browserforge-mcp
+# or the .tgz from https://github.com/zoghlamimostafa/BrowserForge-MCP/releases: npm install -g ./<the downloaded file>.tgz
 browserforge setup
 ```
 

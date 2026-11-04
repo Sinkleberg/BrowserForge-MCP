@@ -24,7 +24,7 @@ The text submitted to addons.mozilla.org (AMO) and the Chrome Web Store, kept he
 
 **Description:**
 
-> BrowserForge connects an AI agent on your computer to this browser. Install the free `browserforge-mcp` program (`npm install -g browserforge-mcp`, then `browserforge setup`), add it to Claude Code, OpenAI Codex or any MCP client, and the agent can open pages, read them, click, type, fill forms and capture network traffic in your real browser session.
+> BrowserForge connects an AI agent on your computer to this browser. Install the free `browserforge` program (`npm install -g @el-makina-ai/browserforge-mcp`, then `browserforge setup`), add it to Claude Code, OpenAI Codex or any MCP client, and the agent can open pages, read them, click, type, fill forms and capture network traffic in your real browser session.
 >
 > You stay in charge:
 > • Submitting, sending, paying, uploading and typing passwords wait for your click in a small approval window. The agent cannot answer it.

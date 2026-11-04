@@ -60,13 +60,14 @@ for (const f of ['README.md', 'LICENSE', 'CONTRIBUTING.md']) if (fs.existsSync(p
 
 // 4. The package manifest. Everything is bundled, so there are no dependencies to install.
 fs.writeFileSync(path.join(out, 'package.json'), JSON.stringify({
-  name: 'browserforge-mcp',
+  name: '@el-makina-ai/browserforge-mcp',
   version,
   description: rootPkg.description,
   license: rootPkg.license,
   type: 'module',
   bin: { browserforge: 'bin/browserforge.mjs' },
   engines: { node: '>=22' },
+  publishConfig: { access: 'public' },
   files: ['bin', 'extension', 'share', 'docs', 'README.md', 'LICENSE', 'CONTRIBUTING.md'],
   keywords: ['mcp', 'browser', 'automation', 'firefox', 'chrome', 'ai-agent'],
   repository: { type: 'git', url: 'git+https://github.com/zoghlamimostafa/BrowserForge-MCP.git' },

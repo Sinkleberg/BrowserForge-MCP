@@ -33,7 +33,7 @@ const npmCli = process.platform === 'win32' ? [path.join(path.dirname(process.ex
 const [npmCmd, npmPre] = npmCli ? [process.execPath, npmCli] : ['npm', []];
 execFileSync(npmCmd, [...npmPre, 'install', '--prefix', prefix, tgz, '--no-audit', '--no-fund', '--loglevel=error'], { stdio: 'inherit' });
 
-const bin = path.join(prefix, 'node_modules', 'browserforge-mcp', 'bin', 'browserforge.mjs');
+const bin = path.join(prefix, 'node_modules', '@el-makina-ai', 'browserforge-mcp', 'bin', 'browserforge.mjs');
 check('installed program exists', fs.existsSync(bin), bin);
 const env = { ...process.env, BROWSERFORGE_HOME: home };
 const run = (...args) => execFileSync(process.execPath, [bin, ...args], { env, encoding: 'utf8' });

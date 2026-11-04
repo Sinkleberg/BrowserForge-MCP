@@ -28,4 +28,4 @@
 3. `npm run smoke:install -- release`: installs that tarball into a clean folder and checks `--help`, `setup`, the extension folders, that the server starts, `/health` answers and `/status` refuses a missing token. CI runs the same on Ubuntu, Windows and macOS (Actions > CI).
 4. Look inside the tarball (`tar -tzf release/*.tgz`): it must contain no personal files, tokens or logs.
 
-Publishing is yours to do with your own accounts (nothing here publishes): `npm publish release/browserforge-mcp-<version>.tgz` (check the name `browserforge-mcp` is free first), the extension zips to the Chrome Web Store and to addons.mozilla.org (which signs the Firefox build), then update INSTALL.md to say so.
+Publishing is yours to do with your own accounts (nothing here publishes): `npm publish release/<the .tgz> --access public` (the package is [`@el-makina-ai/browserforge-mcp`](https://www.npmjs.com/package/@el-makina-ai/browserforge-mcp); the unscoped name `browserforge-mcp` is not used), the extension zips to the Chrome Web Store and to addons.mozilla.org (which signs the Firefox build), then update INSTALL.md to say so.

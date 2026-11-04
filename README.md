@@ -16,6 +16,7 @@ A local-first Firefox + Chrome extension and MCP server for Claude Code, OpenAI 
 
 Chrome, Edge and Brave use the Chrome Web Store build. Then install the small local program: on **Windows** run the installer above (it brings its own Node.js; Windows may warn because it is not code-signed yet: *More info*, then *Run anyway*), elsewhere see [Quick start](#quick-start).
 
+[![npm](https://img.shields.io/npm/v/@el-makina-ai/browserforge-mcp?logo=npm&label=npm&color=CB3837)](https://www.npmjs.com/package/@el-makina-ai/browserforge-mcp)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Node >= 20](https://img.shields.io/badge/node-%E2%89%A5%2020-339933)
 ![MCP](https://img.shields.io/badge/protocol-MCP-black)
@@ -44,7 +45,7 @@ AI agents are good at deciding what to do on a website and bad at being trusted 
 Requires Node.js 22 or newer, and Chrome, Edge, Brave or Firefox, on Linux, macOS or Windows (Linux is the one it has been tested on; see [docs/INSTALL.md](docs/INSTALL.md)).
 
 ```bash
-# From npm (no build): npm install -g browserforge-mcp   then:   browserforge setup
+# From npm (no build): npm install -g @el-makina-ai/browserforge-mcp   then:   browserforge setup
 # From a checkout:
 npm install && npm run build
 node apps/mcp-server/dist/cli.js serve     # prints endpoints, creates tokens in ~/.config/browserforge/
