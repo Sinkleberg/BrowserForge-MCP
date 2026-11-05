@@ -26,6 +26,9 @@ export interface ParamInfo extends Claim {
   examples: string[];
   distinctValues: number;
   occurrences: number;
+  /** Possible string enum, never a proven exhaustive set. See enumClaim for its separate hypothesis. */
+  enum?: string[];
+  enumClaim?: Claim;
 }
 
 export interface PathParamInfo extends Claim {
