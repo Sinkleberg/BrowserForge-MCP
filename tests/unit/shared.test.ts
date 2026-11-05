@@ -60,7 +60,7 @@ describe('path safety', () => {
     try {
       const link = path.join(root, 'link');
       fs.symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
-      expect(() => resolveSafePath(path.join(link, 'passwd'), [root])).toThrow();
+      expect(() => resolveSafePath(path.join(link, 'passwd'), [root])).toThrow(/outside the allowed directories/);
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });
     }
