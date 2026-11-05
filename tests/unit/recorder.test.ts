@@ -387,6 +387,6 @@ describe('FlowRecorder', () => {
     const r = new FlowRecorder(dir, { enabled: true }, now);
     fill(r, 'a');
     const file = path.join(dir, `${r.list()[0]!.id}.json`);
-    expect(fs.statSync(file).mode & 0o077).toBe(0);
+    if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o077).toBe(0);
   });
 });

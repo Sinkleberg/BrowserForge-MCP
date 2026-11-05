@@ -46,7 +46,7 @@ describe('PluginApi files', () => {
     const w = a.files.write('setting:cvDir/tailored', 'x/b.yaml', 'out');
     expect(w).toBe(path.join(fs.realpathSync(cv), 'tailored/x/b.yaml'));
     expect(fs.readFileSync(w, 'utf8')).toBe('out');
-    expect(fs.statSync(w).mode & 0o077).toBe(0);
+    if (process.platform !== 'win32') expect(fs.statSync(w).mode & 0o077).toBe(0); // Windows has no Unix modes
     a.files.write('data', 'n.json', '{}');
     expect(fs.existsSync(path.join(dirs.data, 'n.json'))).toBe(true);
     expect(a.files.list('setting:cvDir').map((e) => e.name).sort()).toEqual(['a.yaml', 'tailored']);
@@ -84,7 +84,7 @@ describe('PluginApi copy and remove', () => {
     const dest = a.files.copy('setting:src', 'cv.pdf', 'uploads/cv', 'out/cv.pdf');
     expect(dest).toBe(path.join(dirs.uploads, 'cv/out/cv.pdf'));
     expect(fs.readFileSync(dest)).toEqual(bytes);
-    expect(fs.statSync(dest).mode & 0o077).toBe(0);
+    if (process.platform !== 'win32') expect(fs.statSync(dest).mode & 0o077).toBe(0);
     expect(() => a.files.copy('data', 'x', 'uploads/cv', 'y')).toThrow(/not granted read access/); // source must be readable
     expect(() => a.files.copy('setting:src', 'cv.pdf', 'exports', 'y')).toThrow(/not granted write access/);
     expect(() => a.files.copy('setting:src', '../../etc/passwd', 'data', 'p')).toThrow(/outside the allowed/);
@@ -99,16 +99,16 @@ describe('PluginApi copy and remove', () => {
 describe('PluginApi exec', () => {
   it('runs only declared programs, without a shell, with a minimal environment and a time limit', async () => {
     process.env.SUPER_SECRET_KEY = 'leak-me';
-    const dir = tmp();
-    const script = path.join(dir, 'tool.sh');
-    fs.writeFileSync(script, '#!/bin/sh\necho "args:$1"; echo "key:${SUPER_SECRET_KEY:-none}"; exit 3\n', { mode: 0o755 });
-    const { api: a } = api({ settings: { bin: { type: 'path', description: 'x' } }, permissions: { exec: ['setting:bin'] } }, { settings: { bin: script } });
-    const r = await a.exec(script, ['hello; rm -rf /']);
+    // Node itself is the declared program: it exists on every system, unlike a shell script or `sleep`.
+    const node = process.execPath;
+    const code = 'console.log("args:" + process.argv[1]); console.log("key:" + (process.env.SUPER_SECRET_KEY || "none")); process.exit(3)';
+    const { api: a } = api({ settings: { bin: { type: 'path', description: 'x' } }, permissions: { exec: ['setting:bin'] } }, { settings: { bin: node } });
+    const r = await a.exec(node, ['-e', code, 'hello; rm -rf /']);
     expect(r.code).toBe(3);
     expect(r.stdout).toContain('args:hello; rm -rf /'); // passed as one literal argument
     expect(r.stdout).toContain('key:none'); // secrets in the server's environment are not inherited
-    await expect(a.exec('/bin/ls', [])).rejects.toThrow(/not granted permission to run/);
-    await expect(a.exec(script, [1 as never])).rejects.toThrow(/must be strings/);
+    await expect(a.exec(process.platform === 'win32' ? 'C:\\Windows\\System32\\whoami.exe' : '/bin/ls', [])).rejects.toThrow(/not granted permission to run/);
+    await expect(a.exec(node, [1 as never])).rejects.toThrow(/must be strings/);
     delete process.env.SUPER_SECRET_KEY;
   });
 
@@ -120,11 +120,13 @@ describe('PluginApi exec', () => {
 
   it('times out slow programs and restricts the working folder', async () => {
     const dir = tmp();
-    const { api: a } = api({ settings: { work: { type: 'path', description: 'x' } }, permissions: { exec: ['sleep', 'pwd'], files: { read: ['setting:work'] } } }, { settings: { work: dir } });
-    await expect(a.exec('sleep', ['5'], { timeoutMs: 1000 })).rejects.toThrow(/did not finish/);
-    expect((await a.exec('pwd', [], { cwd: { root: 'setting:work' } })).stdout.trim()).toBe(fs.realpathSync(dir));
-    await expect(a.exec('pwd', [], { cwd: { root: 'setting:work', rel: '../..' } })).rejects.toThrow(/outside the allowed/);
-    await expect(a.exec('pwd', [], { cwd: { root: 'exports' } })).rejects.toThrow(/not granted/);
+    const node = process.execPath;
+    const { api: a } = api({ settings: { work: { type: 'path', description: 'x' }, bin: { type: 'path', description: 'x' } }, permissions: { exec: ['setting:bin'], files: { read: ['setting:work'] } } }, { settings: { work: dir, bin: node } });
+    await expect(a.exec(node, ['-e', 'setTimeout(() => {}, 5000)'], { timeoutMs: 1000 })).rejects.toThrow(/did not finish/);
+    const cwd = (await a.exec(node, ['-e', 'console.log(process.cwd())'], { cwd: { root: 'setting:work' } })).stdout.trim();
+    expect(fs.realpathSync.native(cwd)).toBe(fs.realpathSync.native(dir)); // .native: Windows may print a short 8.3 name
+    await expect(a.exec(node, ['-e', ''], { cwd: { root: 'setting:work', rel: '../..' } })).rejects.toThrow(/outside the allowed/);
+    await expect(a.exec(node, ['-e', ''], { cwd: { root: 'exports' } })).rejects.toThrow(/not granted/);
   });
 });
 

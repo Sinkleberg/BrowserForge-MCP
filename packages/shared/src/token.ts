@@ -20,7 +20,8 @@ export function safeEqual(a: string, b: string): boolean {
 export function standardConfigDir(platform: NodeJS.Platform, env: NodeJS.ProcessEnv, home: string): string {
   if (env.BROWSERFORGE_HOME) return env.BROWSERFORGE_HOME;
   if (platform === 'win32') return path.win32.join(env.APPDATA ?? path.win32.join(home, 'AppData', 'Roaming'), 'browserforge');
-  return path.join(env.XDG_CONFIG_HOME ?? path.join(home, '.config'), 'browserforge');
+  // A POSIX path for a non-Windows platform, whatever system this code runs on (a pure function, tested for every platform everywhere).
+  return path.posix.join(env.XDG_CONFIG_HOME ?? path.posix.join(home, '.config'), 'browserforge');
 }
 
 export function configDir(): string {
