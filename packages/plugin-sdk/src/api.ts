@@ -3,11 +3,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { BrowserForgeError, expandHome, minimalEnv, resolveSafePath } from '@browserforge/shared';
 import type { Permissions, PluginManifest } from './manifest.js';
+import { fetchPublic, type PluginFetchOptions, type PluginFetchResponse } from './network.js';
 
 export type SettingValue = string | number | boolean;
 
 /** Everything a plugin can do. It receives this and nothing else: no server internals, no raw filesystem handle. */
 export interface PluginApi {
+  /** Read public HTTPS data from an approved origin, without credentials, redirects or request bodies. */
+  fetch(url: string, opts?: PluginFetchOptions): Promise<PluginFetchResponse>;
   settings: Readonly<Record<string, SettingValue | undefined>>;
   files: {
     /** `root` is exactly as declared in permissions.files, e.g. "setting:cvDir" or "data". */
@@ -75,6 +78,7 @@ export function createPluginApi(rt: PluginRuntime): PluginApi {
   };
 
   return {
+    fetch: (url, opts) => fetchPublic(rt.granted.network ?? [], url, opts, rt.signal),
     settings: rt.settings,
     files: {
       read(root, rel) {
