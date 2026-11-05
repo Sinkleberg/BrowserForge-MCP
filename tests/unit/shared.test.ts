@@ -56,9 +56,14 @@ describe('path safety', () => {
     expect(() => resolveSafePath('a\0b', [root])).toThrow();
   });
   it('rejects symlink escapes', () => {
-    const link = path.join(root, 'link');
-    fs.symlinkSync('/etc', link);
-    expect(() => resolveSafePath(path.join(link, 'passwd'), [root])).toThrow();
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'bf-outside-'));
+    try {
+      const link = path.join(root, 'link');
+      fs.symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
+      expect(() => resolveSafePath(path.join(link, 'passwd'), [root])).toThrow();
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
   it('sanitises segments', () => {
     const seg = safeSegment('../../x y');

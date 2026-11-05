@@ -14,7 +14,7 @@ export function createTestApi(
   opts: { settings?: Record<string, SettingValue>; browser?: PluginRuntime['browserCall']; grant?: 'manifest' | 'none' } = {},
 ): { api: PluginApi; dirs: PluginRuntime['dirs']; cleanup(): void } {
   const manifest = parseManifest(manifestInput);
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), `bf-plugin-test-${manifest.id}-`));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `bf-plugin-test-${manifest.id}-`))); // resolved: on macOS /var is a link to /private/var, and the API returns resolved paths
   const dirs = { uploads: path.join(root, 'uploads'), exports: path.join(root, 'exports'), data: path.join(root, 'data') };
   for (const d of Object.values(dirs)) fs.mkdirSync(d, { recursive: true });
   const granted = opts.grant === 'none' ? { browser: false, files: { read: [], write: [] }, exec: [] } : manifest.permissions;

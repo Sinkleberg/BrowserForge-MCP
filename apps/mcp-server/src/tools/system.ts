@@ -40,7 +40,9 @@ export function registerSystemTools(server: McpServer, ctx: ServerContext): void
         const p = path.join(ctx.config.configDir, f);
         try {
           const mode = fs.statSync(p).mode & 0o777;
-          checks.push({ name: `${f}-permissions`, ok: (mode & 0o077) === 0, detail: `mode ${mode.toString(8)}` });
+          // Windows has no Unix permission bits: the file is protected by the user profile's folder permissions, so there is nothing to check.
+          if (process.platform === 'win32') checks.push({ name: `${f}-permissions`, ok: true, detail: 'Windows: protected by your user profile (Unix modes do not apply)' });
+          else checks.push({ name: `${f}-permissions`, ok: (mode & 0o077) === 0, detail: `mode ${mode.toString(8)}` });
         } catch {
           checks.push({ name: `${f}-permissions`, ok: false, detail: 'missing' });
         }

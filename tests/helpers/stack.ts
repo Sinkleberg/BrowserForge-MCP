@@ -29,7 +29,7 @@ export interface Stack {
 export const ROOT = path.resolve(import.meta.dirname, '../..');
 
 export async function startStack(opts: { allowReveal?: boolean; beforeStart?: (home: string) => Promise<void> | void } = {}): Promise<Stack> {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'bf-home-'));
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bf-home-'))); // resolved: macOS /var -> /private/var
   await opts.beforeStart?.(home); // e.g. install a plugin or write a skill before the server loads them
   const demo: Demo = await startDemoSite({ port: 0 });
   const app = createApp({ port: 0, configDir: home, allowReveal: opts.allowReveal ?? false, logLevel: 'error', extraAllowDirs: [home] });

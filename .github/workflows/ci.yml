@@ -28,6 +28,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The generated PHP client is checked with a real PHP. Linux and Windows runners ship one; macOS runners do not.
+      - name: Install PHP (macOS)
+        if: runner.os == 'macOS'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
       - run: npm run build
       - run: npm run typecheck
       - run: npm run lint

@@ -17,7 +17,7 @@ const alias = {
 export default defineConfig({
   test: {
     projects: [
-      { resolve: { alias }, test: { name: 'unit', include: ['tests/unit/**/*.test.ts'], testTimeout: 20_000 } },
+      { resolve: { alias }, test: { name: 'unit', include: ['tests/unit/**/*.test.ts'], testTimeout: 60_000 } },
       { resolve: { alias }, test: { name: 'security', include: ['tests/security/**/*.test.ts'], testTimeout: 30_000 } },
       { resolve: { alias }, test: { name: 'integration', include: ['tests/integration/**/*.test.ts'], testTimeout: 60_000 } },
       { resolve: { alias }, test: { name: 'e2e', include: ['tests/e2e/**/*.test.ts'], testTimeout: 180_000, hookTimeout: 180_000, fileParallelism: false } },

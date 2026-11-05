@@ -69,7 +69,7 @@ const cleanups: (() => void)[] = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
 
 function setup(settings: Record<string, string | number> = {}) {
-  const cvDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bf-cv-'));
+  const cvDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bf-cv-')));
   fs.mkdirSync(path.join(cvDir, 'AI'));
   fs.writeFileSync(path.join(cvDir, 'AI/master.yaml'), MASTER);
   fs.writeFileSync(path.join(cvDir, 'AI/notes.yaml'), 'just: notes\n'); // not a CV
@@ -186,7 +186,8 @@ describe('cv_tailor', () => {
 });
 
 describe('cv_render', () => {
-  it('renders through rendercv, checks the page count and copies the PDF into the upload folder', async () => {
+  // A plugin runs its program directly, never through a shell, so a shell-script stand-in cannot run on Windows (it needs a real rendercv.exe).
+  it.skipIf(process.platform === 'win32')('renders through rendercv, checks the page count and copies the PDF into the upload folder', async () => {
     const s = setup();
     await s.run('cv_tailor', tailor());
     const r = await s.run('cv_render', { file: 'tailored/globex-ai-engineer.yaml' });
@@ -196,7 +197,7 @@ describe('cv_render', () => {
     expect((await s.run('cv_list')).uploadReadyPdfs).toEqual([{ file: 'Ada_Lovelace_CV_globex-ai-engineer.pdf', bytes: 9 }]);
   });
 
-  it('refuses CVs over the page limit, shows rendercv\'s own error, and renders only tailored copies', async () => {
+  it.skipIf(process.platform === 'win32')('refuses CVs over the page limit, shows rendercv\'s own error, and renders only tailored copies', async () => {
     const long = setup({ maxPages: 1 });
     const bigMaster = MASTER.replace('highlights:\n          - Built', `highlights:\n${Array.from({ length: 40 }, (_, i) => `          - Extra line ${i} analytical work`).join('\n')}\n          - Built`);
     fs.writeFileSync(path.join(long.cvDir, 'AI/master.yaml'), bigMaster);
@@ -247,7 +248,7 @@ describe('cv_applications', () => {
   it('keeps its log in its own private data folder', async () => {
     const s = setup();
     await add(s);
-    expect(fs.statSync(path.join(s.dirs.data, 'applications.json')).mode & 0o077).toBe(0);
+    if (process.platform !== 'win32') expect(fs.statSync(path.join(s.dirs.data, 'applications.json')).mode & 0o077).toBe(0);
   });
 });
 

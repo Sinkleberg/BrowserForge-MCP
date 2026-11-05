@@ -259,7 +259,7 @@ describe('exporters', () => {
     const file = path.join(tmp, 'flow.ts');
     fs.writeFileSync(file, gen('playwright-ts', true));
     fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(tmp, 'node_modules'));
-    execFileSync(path.join(ROOT, 'node_modules/.bin/tsc'), ['--noEmit', '--strict', '--target', 'es2022', '--module', 'esnext', '--moduleResolution', 'bundler', '--types', 'node', '--skipLibCheck', file], { stdio: 'pipe', cwd: tmp });
+    execFileSync(process.execPath, [path.join(ROOT, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'esnext', '--moduleResolution', 'bundler', '--types', 'node', '--skipLibCheck', file], { stdio: 'pipe', cwd: tmp });
   });
 
   it('Python outputs compile', () => {

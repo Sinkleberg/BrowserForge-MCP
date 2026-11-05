@@ -18,7 +18,7 @@ afterEach(async () => {
   while (stacks.length) await stacks.pop()!.close();
   while (tmps.length) fs.rmSync(tmps.pop()!, { recursive: true, force: true });
 });
-const tmp = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'bf-plug-')); tmps.push(d); return d; };
+const tmp = () => { const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bf-plug-'))); tmps.push(d); return d; };
 
 /** Write a plugin package to disk. `source` can use definePlugin, tool and z. */
 function makePlugin(manifest: Record<string, unknown>, source: string, opts: { zodCopy?: boolean } = {}): string {
@@ -54,7 +54,7 @@ describe('installing', () => {
     const rec = commit(store, again);
     expect(rec).toMatchObject({ id: 'hello', enabled: true, kind: 'plugin', granted: { files: { write: ['data'] } } });
     expect(store.list().length).toBe(1);
-    expect(fs.statSync(path.join(store.root, '..', 'plugins.json')).mode & 0o077).toBe(0);
+    if (process.platform !== 'win32') expect(fs.statSync(path.join(store.root, '..', 'plugins.json')).mode & 0o077).toBe(0);
   });
 
   it('refuses things that are not plugins, option-looking sources, and cleans up after itself', async () => {
@@ -197,7 +197,8 @@ describe('a running server with plugins', () => {
 });
 
 describe('the RenderCV plugin, installed for real', () => {
-  it('shows its permissions at install, then tailors, renders and logs through the MCP server', async () => {
+  // A plugin runs its program directly, never through a shell, so a shell-script stand-in cannot run on Windows (it needs a real rendercv.exe).
+  it.skipIf(process.platform === 'win32')('shows its permissions at install, then tailors, renders and logs through the MCP server', async () => {
     const cvDir = tmp();
     fs.mkdirSync(path.join(cvDir, 'AI'));
     fs.writeFileSync(path.join(cvDir, 'AI/master.yaml'), 'cv:\n  name: Ada Lovelace\n  headline: Engineer\n  sections:\n    Summary:\n      - Builds reliable cloud systems.\n    Experience:\n      - company: Acme\n        position: Engineer\n        highlights:\n          - Ran Azure infrastructure.\n');

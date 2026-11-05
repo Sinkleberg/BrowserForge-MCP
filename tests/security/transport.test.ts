@@ -106,7 +106,9 @@ describe('extension WebSocket', () => {
       const f = await connectFake(h.port, { id: 'browser-big00001' });
       await waitFor(() => h.hub.listPeers()[0]?.connected);
       f.ws.send(Buffer.alloc(20 * 1024 * 1024, 1));
-      expect(await closed(f.ws)).toBe(1009);
+      // The hub refuses the frame and closes. Linux reports the clean 1009; macOS and Windows can report an abrupt 1006 (the socket is reset while
+      // the client is still sending 20 MB). Either way the connection is gone, and the next one below proves the hub is unharmed.
+      expect([1009, 1006]).toContain(await closed(f.ws));
       const g = await connectFake(h.port, { id: 'browser-bin00001' });
       await waitFor(() => h.hub.listPeers().some((p) => p.browserId === 'browser-bin00001' && p.connected));
       g.ws.send(Buffer.from([1, 2, 3]));
