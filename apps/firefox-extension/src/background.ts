@@ -5,6 +5,7 @@ import { api, browserKind, browserVersion, isFirefox } from './browser-api.js';
 import { detachAll, setCdpEmitter, syncCdp } from './cdp.js';
 import { bodyCaptureAvailable, bodyCapturePossible, ensureBodyFiltering, registerCaptureListeners, setEmitter, setServerUrl } from './capture.js';
 import type { ContentCall, ContentReply } from './messages.js';
+import { recordedShadow } from './recorded-shadow.js';
 import { activity, clearActivity, clearApprovalHistory, getSettings, hostOf, loadActivity, loadApprovalHistory, loadSettings, logActivity, pendingApprovals, recordApproval, runtime, safeUrl, saveSettings, type ApprovalRecord } from './state.js';
 
 declare const __E2E__: boolean; // true only in the -e2e test builds (dead-stripped from release builds)
@@ -763,6 +764,8 @@ api.runtime.onMessage.addListener(((msg: any, sender: any) => {
   if (humanWindow.length >= 25) return false; // a person is not that fast; this is a runaway page
   humanWindow.push(now);
   const d = msg.data ?? {};
+  // Check selectors before cutting strings; clipping can select another host/target with the same prefix.
+  const shadow = recordedShadow(d.shadow, d.locator?.css);
   const cut = (v: unknown, n: number) => (typeof v === 'string' ? v.slice(0, n) : undefined);
   const locator: Record<string, string> = {};
   for (const [k, v] of Object.entries(d.locator ?? {})) if (typeof v === 'string' && v && k.length <= 30) locator[k] = v.slice(0, 600);
@@ -776,7 +779,7 @@ api.runtime.onMessage.addListener(((msg: any, sender: any) => {
       at: now, tabId: sender.tab.id, kind, url: cut(d.url, 4000), frameUrl: cut(d.frameUrl, 4000), locator, fieldLabel: cut(d.fieldLabel, 120), key: cut(d.key, 30),
       sensitive: d.sensitive === true || undefined, consequential: d.consequential === true || undefined, custom: d.custom === true || undefined,
       nth: Number.isInteger(d.nth) && d.nth >= 0 && d.nth <= 10000 ? d.nth : undefined,
-      shadow: Array.isArray(d.shadow) && d.shadow.length ? d.shadow.slice(0, 8).map((x: unknown) => String(x).slice(0, 600)) : undefined,
+      shadow,
       state: d.state === 'checked' || d.state === 'unchecked' ? d.state : undefined,
       row: Number.isInteger(d.row) && d.row > 0 && table && d.row <= table.length ? d.row : undefined, table: Number.isInteger(d.row) ? table : undefined,
       value: s.recordValues && d.sensitive !== true && kind !== 'upload' ? cut(d.value, 5000) : undefined,

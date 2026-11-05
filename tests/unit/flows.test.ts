@@ -25,6 +25,12 @@ function sample(): Flow {
   return b.flow;
 }
 
+function shadowSample(): Flow {
+  const flow = sample();
+  flow.steps[1]!.locator = { css: `[data-field=${JSON.stringify('雪"\\value')}]`, shadow: ['#outer', `[data-host=${JSON.stringify("inner'\\雪")}]`], nth: 17 };
+  return flow;
+}
+
 describe('FlowBuilder', () => {
   it('names parameters from labels, de-duplicates, and never keeps a value for sensitive fields', () => {
     const f = sample();
@@ -107,15 +113,15 @@ describe('FlowBuilder', () => {
     expect(scrubFlow(old)).toBe(0); // nothing more to do
   });
 
-  it('Playwright picks the nth of equal matches, and the formats that cannot reach into a shadow root refuse instead of writing a script that cannot find it', () => {
+  it('Playwright picks the nth of equal matches, and recorded shadow paths export except to Chrome Recorder', () => {
     const b = new FlowBuilder({ id: 'n', site: 's', now: new Date('2026-10-30T10:00:00Z') });
     b.add({ action: 'click', locator: { tag: 'button', role: 'button', name: 'Add', nth: 1, css: 'button.add' }, url: 'https://s.test/f' });
     expect(getExporter('playwright-ts')!.generate(b.flow)).toContain(`getByRole("button" as any, { name: "Add" }).nth(1)`);
     expect(getExporter('playwright-py')!.generate(b.flow)).toContain('.get_by_role("button", name="Add").nth(1)');
     const sh = new FlowBuilder({ id: 'sh', site: 's' });
     sh.add({ action: 'fill', value: 'x', fieldLabel: 'Email', locator: { tag: 'input', label: 'Email', css: '#e', shadow: ['html > body > my-form'] }, url: 'https://s.test/f' });
-    expect(() => getExporter('playwright-ts')!.generate(sh.flow)).not.toThrow(); // Playwright's CSS pierces open shadow roots
-    for (const f of ['selenium-py', 'selenium-java', 'puppeteer-replay']) expect(() => getExporter(f)!.generate(sh.flow), f).toThrow(/open shadow root.*playwright-ts/);
+    for (const f of ['playwright-ts', 'playwright-py', 'selenium-py', 'selenium-java']) expect(() => getExporter(f)!.generate(sh.flow), f).not.toThrow();
+    expect(() => getExporter('puppeteer-replay')!.generate(sh.flow)).toThrow(/open shadow root.*playwright-ts/);
   });
 
   it('validates flow JSON', () => {
@@ -258,8 +264,10 @@ describe('exporters', () => {
   it('TypeScript output type-checks against the real playwright types', () => {
     const file = path.join(tmp, 'flow.ts');
     fs.writeFileSync(file, gen('playwright-ts', true));
+    const shadowFile = path.join(tmp, 'shadow.ts');
+    fs.writeFileSync(shadowFile, getExporter('playwright-ts')!.generate(shadowSample(), { includeDefaults: true }));
     fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(tmp, 'node_modules'));
-    execFileSync(process.execPath, [path.join(ROOT, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'esnext', '--moduleResolution', 'bundler', '--types', 'node', '--skipLibCheck', file], { stdio: 'pipe', cwd: tmp });
+    execFileSync(process.execPath, [path.join(ROOT, 'node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--target', 'es2022', '--module', 'esnext', '--moduleResolution', 'bundler', '--types', 'node', '--skipLibCheck', file, shadowFile], { stdio: 'pipe', cwd: tmp });
   });
 
   it('Python outputs compile', () => {
@@ -267,6 +275,9 @@ describe('exporters', () => {
       const file = path.join(tmp, `${f}.py`);
       fs.writeFileSync(file, gen(f, true));
       execFileSync('python3', ['-I', '-m', 'py_compile', file], { stdio: 'pipe' });
+      const shadowFile = path.join(tmp, `${f}-shadow.py`);
+      fs.writeFileSync(shadowFile, getExporter(f)!.generate(shadowSample(), { includeDefaults: true }));
+      execFileSync('python3', ['-I', '-m', 'py_compile', shadowFile], { stdio: 'pipe' });
     }
   });
 
@@ -280,10 +291,13 @@ describe('exporters', () => {
     w('org/openqa/selenium/Keys.java', 'package org.openqa.selenium; public enum Keys implements CharSequence { ENTER, TAB, ESCAPE, ARROW_DOWN, ARROW_UP; public int length(){return 0;} public char charAt(int i){return 0;} public CharSequence subSequence(int a,int b){return "";} }');
     w('org/openqa/selenium/WebElement.java', 'package org.openqa.selenium; public interface WebElement { void click(); void clear(); void sendKeys(CharSequence... k); }');
     w('org/openqa/selenium/WebDriver.java', 'package org.openqa.selenium; import java.util.List; public interface WebDriver { void get(String u); List<WebElement> findElements(By b); void quit(); TargetLocator switchTo(); interface TargetLocator { WebDriver defaultContent(); WebDriver frame(WebElement e); WebElement activeElement(); } }');
+    w('org/openqa/selenium/JavascriptExecutor.java', 'package org.openqa.selenium; public interface JavascriptExecutor { Object executeScript(String script, Object... args); }');
     w('org/openqa/selenium/chrome/ChromeOptions.java', 'package org.openqa.selenium.chrome; public class ChromeOptions { public ChromeOptions addArguments(String... a){return this;} }');
     w('org/openqa/selenium/chrome/ChromeDriver.java', 'package org.openqa.selenium.chrome; import java.util.List; import org.openqa.selenium.*; public class ChromeDriver implements WebDriver { public ChromeDriver(ChromeOptions o){} public void get(String u){} public List<WebElement> findElements(By b){return null;} public void quit(){} public TargetLocator switchTo(){return null;} }');
     w('org/openqa/selenium/support/ui/Select.java', 'package org.openqa.selenium.support.ui; public class Select { public Select(org.openqa.selenium.WebElement e){} public void selectByVisibleText(String t){} }');
-    w('Flow.java', gen('selenium-java', true));
-    execFileSync('javac', ['-d', path.join(dir, 'out'), ...['org/openqa/selenium/By.java', 'org/openqa/selenium/Keys.java', 'org/openqa/selenium/WebElement.java', 'org/openqa/selenium/WebDriver.java', 'org/openqa/selenium/chrome/ChromeOptions.java', 'org/openqa/selenium/chrome/ChromeDriver.java', 'org/openqa/selenium/support/ui/Select.java', 'Flow.java']], { cwd: dir, stdio: 'pipe' });
+    for (const f of [flow, shadowSample()]) {
+      w('Flow.java', getExporter('selenium-java')!.generate(f, { includeDefaults: true }));
+      execFileSync('javac', ['-encoding', 'UTF-8', '-d', path.join(dir, 'out'), ...['org/openqa/selenium/By.java', 'org/openqa/selenium/Keys.java', 'org/openqa/selenium/WebElement.java', 'org/openqa/selenium/WebDriver.java', 'org/openqa/selenium/JavascriptExecutor.java', 'org/openqa/selenium/chrome/ChromeOptions.java', 'org/openqa/selenium/chrome/ChromeDriver.java', 'org/openqa/selenium/support/ui/Select.java', 'Flow.java']], { cwd: dir, stdio: 'pipe' });
+    }
   });
 });

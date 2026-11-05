@@ -4,6 +4,7 @@
  */
 import { api } from './browser-api.js';
 import type { ContentCall, ContentReply } from './messages.js';
+import { recordedShadow } from './recorded-shadow.js';
 
 type Json = Record<string, unknown>;
 const EPOCH = Math.random().toString(36).slice(2, 8);
@@ -211,13 +212,15 @@ function cssPath(el: Element): string {
   const parts: string[] = [];
   let cur: Element | null = el;
   for (let depth = 0; cur && cur.nodeType === 1 && depth < 9; depth++) {
-    if (cur.id && !GENERATED_ID.test(cur.id)) {
+    const scope = cur.getRootNode() as Document | ShadowRoot;
+    if (cur.id && !GENERATED_ID.test(cur.id) && scope.querySelectorAll(`#${CSS.escape(cur.id)}`).length === 1) {
       parts.unshift(`#${CSS.escape(cur.id)}`);
       break;
     }
     const tag = cur.tagName.toLowerCase();
     if (tag === 'html') { parts.unshift('html'); break; }
-    const same = cur.parentElement ? [...cur.parentElement.children].filter((c) => c.tagName === cur!.tagName) : [];
+    const parent = cur.parentElement ?? (cur.parentNode instanceof ShadowRoot ? cur.parentNode : null);
+    const same = parent ? [...parent.children].filter((c) => c.tagName === cur!.tagName) : [];
     parts.unshift(same.length > 1 ? `${tag}:nth-of-type(${same.indexOf(cur) + 1})` : tag);
     cur = cur.parentElement;
   }
@@ -256,8 +259,10 @@ function computeLocator(el: Element): Json {
   if (text && ['button', 'a', 'summary', 'span', 'div', 'li'].includes(tag) && text.length <= 40) loc.text = text;
   const shadow = shadowChain(el);
   loc.css = cssPath(el);
-  if (shadow.length) loc.shadow = shadow; // css is relative to the innermost shadow root, and an xpath cannot cross one
-  else loc.xpath = xpathOf(el);
+  if (shadow.length) {
+    loc.shadow = recordedShadow(shadow, loc.css); // preserve refusal before any human-message string clamping
+    if ((loc.shadow as string[])[0] === '') loc.css = '';
+  } else loc.xpath = xpathOf(el);
   if (isDisabled(el)) loc.disabled = true;
   // When the best strategy matches several elements, say which one this is.
   for (const [, find] of locatorTries(loc)) {
@@ -287,6 +292,24 @@ function shadowChain(el: Element): string[] {
 
 /** The ways a recorded locator can find its element, best first. Used both to record `nth` and to look the element up again. */
 function locatorTries(loc: Json): [string, () => Element[]][] {
+  // Semantic strategies/nth were recorded globally. A shadow recording's exact CSS must never fall back to another root.
+  if (loc.shadow !== undefined && !Array.isArray(loc.shadow)) return [];
+  if (Array.isArray(loc.shadow) && loc.shadow.length) {
+    const hosts = recordedShadow(loc.shadow, loc.css)!;
+    return [['css (shadow)', () => {
+      if (typeof loc.css !== 'string' || !loc.css || !hosts.every((s) => typeof s === 'string' && s.trim())) return [];
+      try {
+        let root: ParentNode = document;
+        for (const selector of hosts) {
+          const matches = root.querySelectorAll(selector as string);
+          if (matches.length !== 1 || !matches[0]?.shadowRoot) return [];
+          root = matches[0].shadowRoot;
+        }
+        const matches = [...root.querySelectorAll(loc.css)];
+        return matches.length === 1 ? matches : [];
+      } catch { return []; }
+    }]];
+  }
   const byText = (sel: string, text: string) => deepAll(sel).filter((e) => textOf(e, 200) === text);
   const tries: [string, () => Element[]][] = [];
   if (loc.testId) tries.push(['testId', () => deepAll(`[data-testid=${JSON.stringify(loc.testId)}],[data-test=${JSON.stringify(loc.testId)}],[data-qa=${JSON.stringify(loc.testId)}]`)]);
@@ -1067,6 +1090,7 @@ const ops: Record<string, (args: Json, approved: boolean) => Promise<unknown> | 
   // controls and wait for one to be enabled (a submit that unlocks after a file is attached). A recorded `nth` picks one of several equal matches.
   resolve_locator: async (args) => {
     const loc = (args.locator ?? {}) as Json;
+    if (recordedShadow(loc.shadow, loc.css)?.[0] === '') throw new CallError('ELEMENT_NOT_FOUND', 'The shadow locator is unrepresentable or may have been truncated at the recording limits; no target was attempted');
     const deadline = Date.now() + Math.min(Math.max(Number(args.waitMs ?? 0), 0), 15_000);
     const needEnabled = args.requireEnabled === true;
     for (;;) {
@@ -1156,7 +1180,7 @@ function relay(kind: 'click' | 'fill' | 'select' | 'press' | 'upload', el: Eleme
     const data: Json = {
       kind, url: location.href, ...(window !== window.top ? { frameUrl: location.href } : {}),
       locator: stringsOnly(loc),
-      ...(typeof loc.nth === 'number' ? { nth: loc.nth } : {}), ...(Array.isArray(loc.shadow) ? { shadow: (loc.shadow as string[]).slice(0, 8).map((x) => String(x).slice(0, 600)) } : {}),
+      ...(typeof loc.nth === 'number' ? { nth: loc.nth } : {}), ...(loc.shadow !== undefined ? { shadow: recordedShadow(loc.shadow, loc.css) } : {}),
       fieldLabel: cleanLabelFor(el).slice(0, 120) || undefined,
       ...(sensitive ? { sensitive: true } : {}),
       ...(idx >= 0 && snap ? { row: idx + 1, table: snap.rows } : {}),

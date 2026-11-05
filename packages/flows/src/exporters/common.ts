@@ -1,4 +1,4 @@
-import type { ExportOptions, Flow, FlowStep } from '../schema.js';
+import type { ExportOptions, Flow, FlowStep, Locator } from '../schema.js';
 
 /** A double-quoted string literal that is valid in TypeScript, Python and Java. */
 export const q = (s: string): string => JSON.stringify(s);
@@ -47,7 +47,46 @@ export function header(flow: Flow, comment: string): string {
 
 export const stepLabel = (s: FlowStep, i: number): string => oneLine(`step ${i + 1}: ${s.label ?? s.action}`);
 
-/** Selenium and Chrome Recorder cannot address an element inside an open shadow root; Playwright's CSS pierces it. Refuse rather than write a script that cannot find the element. */
+/** Shadow recordings carry an exact CSS path; global semantic nth must not be reinterpreted inside a different scope. */
+export function shadowTarget(loc: Locator | undefined): { hosts: string[]; css: string } | undefined {
+  if (loc?.shadow === undefined) return undefined;
+  if (Array.isArray(loc.shadow) && loc.shadow.length === 1 && loc.shadow[0] === '') throw new Error('A shadow locator was refused while recording because its exact path did not fit safely');
+  if (!Array.isArray(loc.shadow) || loc.shadow.some((host) => typeof host !== 'string' || !host.trim())) throw new Error('A shadow locator needs a CSS host chain');
+  if (!loc.shadow.length) return undefined;
+  if (typeof loc.css !== 'string' || !loc.css.trim()) throw new Error('A shadow locator needs its recorded relative CSS path');
+  // The old human relay clipped at8 hosts/600 code units: exact-limit legacy data cannot prove completeness.
+  if (loc.shadow.length >= 8 || loc.shadow.some((host) => host.length >= 600) || loc.css.length >= 600) throw new Error('A shadow locator may be truncated at the recording limits; record a representable path again');
+  return { hosts: loc.shadow, css: loc.css };
+}
+
+/** Fixed exporter code only. Recorded selectors are arguments, never executable code; closed roots and ambiguity return no target. */
+export const SHADOW_QUERY = `function (root, hosts, css) {
+  try {
+    for (const selector of hosts) {
+      const matches = root.querySelectorAll(selector);
+      if (matches.length !== 1 || !matches[0].shadowRoot) return [];
+      root = matches[0].shadowRoot;
+    }
+    const matches = Array.from(root.querySelectorAll(css));
+    return matches.length === 1 ? matches : [];
+  } catch { return []; }
+}`;
+
+export const SHADOW_ENGINE = `(() => {
+  const find = ${SHADOW_QUERY};
+  const all = (root, selector) => {
+    const target = JSON.parse(selector);
+    return find(root, target.hosts, target.css);
+  };
+  return {
+    query(root, selector) { return all(root, selector)[0] || null; },
+    queryAll: all
+  };
+})()`;
+
+export const SHADOW_SCRIPT = `return (${SHADOW_QUERY})(document, arguments[0], arguments[1]);`;
+
+/** Chrome Recorder cannot preserve the open-host chain; refuse instead of writing a script that reaches another element. */
 export function refuseShadow(flow: Flow, format: string): void {
   const i = flow.steps.findIndex((s) => s.locator?.shadow?.length);
   if (i >= 0) throw new Error(`Step ${i + 1} is inside an open shadow root, which the ${format} format cannot address. Export playwright-ts or playwright-py instead: their CSS locators reach into open shadow DOM.`);

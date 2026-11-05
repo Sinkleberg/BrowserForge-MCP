@@ -1,11 +1,13 @@
 import type { Exporter, Flow, FlowStep, Locator } from '../schema.js';
-import { cssEscapeId, defaultsOf, frameMatch, header, q, stepLabel } from './common.js';
+import { cssEscapeId, defaultsOf, frameMatch, header, q, shadowTarget, SHADOW_ENGINE, stepLabel } from './common.js';
 
 type Lang = 'ts' | 'py';
 
 /** Playwright locator expressions for one element, best first. The script tries them in order. */
 export function playwrightCandidates(loc: Locator | undefined, root: string, lang: Lang): string[] {
   if (!loc) return [];
+  const shadow = shadowTarget(loc);
+  if (shadow) return [`${root}.locator(${q('bfshadow=' + JSON.stringify(shadow))})`];
   const out: string[] = [];
   const py = lang === 'py';
   if (loc.testId) out.push(py ? `${root}.get_by_test_id(${q(loc.testId)})` : `${root}.getByTestId(${q(loc.testId)})`);
@@ -48,8 +50,9 @@ export const playwrightTs: Exporter = {
   extension: 'ts',
   generate(flow: Flow, opts) {
     const d = defaultsOf(flow, opts);
+    const shadow = flow.steps.some((s) => shadowTarget(s.locator));
     return `${header(flow, '//')}
-import { chromium, type Locator } from 'playwright';
+import { chromium, ${shadow ? 'selectors, ' : ''}type Locator } from 'playwright';
 import fs from 'node:fs';
 
 const defaults: Record<string, string> = ${JSON.stringify(d, null, 2)};
@@ -74,7 +77,7 @@ async function pick(candidates: Locator[], what: string, timeoutMs = 15000): Pro
 }
 
 // BROWSER_PATH: use an installed Chrome/Chromium instead of Playwright's own build.
-const browser = await chromium.launch({ headless: process.env.HEADLESS !== '0', executablePath: process.env.BROWSER_PATH || undefined });
+${shadow ? `await selectors.register('bfshadow', { content: ${q(SHADOW_ENGINE)} }, { contentScript: true });\n` : ''}const browser = await chromium.launch({ headless: process.env.HEADLESS !== '0', executablePath: process.env.BROWSER_PATH || undefined });
 async function stop(code: number, message?: string): Promise<never> {
   if (message) console.error(message);
   await browser.close();
@@ -116,6 +119,7 @@ export const playwrightPy: Exporter = {
   extension: 'py',
   generate(flow: Flow, opts) {
     const d = defaultsOf(flow, opts);
+    const shadow = flow.steps.some((s) => shadowTarget(s.locator));
     return `${header(flow, '#')}
 import json
 import os
@@ -160,7 +164,7 @@ def stop(code, message=None):
 
 
 PLAYWRIGHT = sync_playwright().start()
-# BROWSER_PATH: use an installed Chrome/Chromium instead of Playwright's own build.
+${shadow ? `PLAYWRIGHT.selectors.register("bfshadow", ${q(SHADOW_ENGINE)}, content_script=True)\n` : ''}# BROWSER_PATH: use an installed Chrome/Chromium instead of Playwright's own build.
 BROWSER = PLAYWRIGHT.chromium.launch(headless=os.environ.get("HEADLESS") != "0", executable_path=os.environ.get("BROWSER_PATH") or None)
 page = BROWSER.new_page()
 try:

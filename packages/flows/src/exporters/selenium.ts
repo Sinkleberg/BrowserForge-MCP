@@ -1,5 +1,5 @@
 import type { Exporter, Flow, FlowStep, Locator } from '../schema.js';
-import { defaultsOf, frameMatch, header, q, refuseShadow, stepLabel } from './common.js';
+import { defaultsOf, frameMatch, header, q, shadowTarget, SHADOW_SCRIPT, stepLabel } from './common.js';
 
 const xq = (s: string): string => (s.includes("'") ? `concat('${s.split("'").join(`', "'", '`)}')` : `'${s}'`);
 
@@ -28,7 +28,8 @@ function pyStep(s: FlowStep, i: number): string[] {
   const cands = `[${seleniumCandidates(s.locator).map(([by, v]) => `(${PY_BY[by]}, ${q(v)})`).join(', ')}]`;
   const what = q(s.label ?? s.action);
   const frame = s.frame ? [`    enter_frame(${q(`iframe[src*=${JSON.stringify(frameMatch(s.frame.url))}]`)})`] : [`    driver.switch_to.default_content()`];
-  const find = `find(${cands}, ${what})`;
+  const shadow = shadowTarget(s.locator);
+  const find = shadow ? `find_shadow(${JSON.stringify(shadow.hosts)}, ${q(shadow.css)}, ${what})` : `find(${cands}, ${what})`;
   switch (s.action) {
     case 'navigate': return [...lines, `    driver.get(${q(s.url ?? '')})`];
     case 'click': return [...lines, ...guard, ...frame, `    ${find}.click()`];
@@ -46,7 +47,7 @@ export const seleniumPy: Exporter = {
   description: 'Selenium script in Python (run with: python flow.py)',
   extension: 'py',
   generate(flow: Flow, opts) {
-    refuseShadow(flow, 'selenium-py');
+    const shadow = flow.steps.some((s) => shadowTarget(s.locator));
     return `${header(flow, '#')}
 import json
 import os
@@ -100,7 +101,18 @@ def find(candidates, what, timeout=15):
     raise RuntimeError("No element found for " + what)
 
 
-def enter_frame(css):
+${shadow ? `def find_shadow(hosts, css, what, timeout=15):
+    """Recorded CSS in an explicit open-host chain; never guess another root or reinterpret a global nth."""
+    end = time.time() + timeout
+    while time.time() < end:
+        els = driver.execute_script(${q(SHADOW_SCRIPT)}, hosts, css)
+        if len(els) == 1:
+            return els[0]
+        time.sleep(0.25)
+    raise RuntimeError("No unique open-shadow element found for " + what)
+
+
+` : ''}def enter_frame(css):
     driver.switch_to.default_content()
     driver.switch_to.frame(find([(By.CSS_SELECTOR, css)], "iframe " + css))
 
@@ -134,7 +146,8 @@ function javaStep(s: FlowStep, i: number): string[] {
   const by = seleniumCandidates(s.locator).map(([k, v]) => `${JAVA_BY[k]}(${q(v)})`).join(', ');
   const what = q(s.label ?? s.action);
   const frame = s.frame ? [`            enterFrame(${q(`iframe[src*=${JSON.stringify(frameMatch(s.frame.url))}]`)});`] : [`            driver.switchTo().defaultContent();`];
-  const find = `find(${what}${by ? ', ' + by : ''})`;
+  const shadow = shadowTarget(s.locator);
+  const find = shadow ? `findShadow(${what}, new String[] {${shadow.hosts.map(q).join(', ')}}, ${q(shadow.css)})` : `find(${what}${by ? ', ' + by : ''})`;
   switch (s.action) {
     case 'navigate': return [...lines, `            driver.get(${q(s.url ?? '')});`];
     case 'click': return [...lines, ...guard, ...frame, `            ${find}.click();`];
@@ -152,7 +165,7 @@ export const seleniumJava: Exporter = {
   description: 'Selenium class in Java (compile with the selenium-java jars; run: java Flow)',
   extension: 'java',
   generate(flow: Flow, opts) {
-    refuseShadow(flow, 'selenium-java');
+    const shadow = flow.steps.some((s) => shadowTarget(s.locator));
     const d = defaultsOf(flow, opts);
     return `${header(flow, '//')}
 import java.time.Duration;
@@ -161,7 +174,7 @@ import java.util.List;
 import java.util.Map;
 import org.openqa.selenium.By;
 import org.openqa.selenium.Keys;
-import org.openqa.selenium.WebDriver;
+${shadow ? 'import org.openqa.selenium.JavascriptExecutor;\n' : ''}import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -215,7 +228,20 @@ ${Object.entries(d).map(([k, v]) => `        DEFAULTS.put(${q(k)}, ${q(v)});`).j
         throw new RuntimeException("No element found for " + what);
     }
 
-    static void enterFrame(String css) throws InterruptedException {
+${shadow ? `    static WebElement findShadow(String what, String[] hosts, String css) throws InterruptedException {
+        long end = System.currentTimeMillis() + 15000;
+        while (System.currentTimeMillis() < end) {
+            Object result = ((JavascriptExecutor) driver).executeScript(${q(SHADOW_SCRIPT)}, java.util.Arrays.asList(hosts), css);
+            if (result instanceof List) {
+                List<?> els = (List<?>) result;
+                if (els.size() == 1 && els.get(0) instanceof WebElement) return (WebElement) els.get(0);
+            }
+            Thread.sleep(250);
+        }
+        throw new RuntimeException("No unique open-shadow element found for " + what);
+    }
+
+` : ''}    static void enterFrame(String css) throws InterruptedException {
         driver.switchTo().defaultContent();
         driver.switchTo().frame(find("iframe " + css, By.cssSelector(css)));
     }

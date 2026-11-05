@@ -150,6 +150,62 @@ customElements.define('shadow-form',class extends HTMLElement{connectedCallback(
   b.addEventListener('click',()=>window.__saved.push({email:i.value,remember:r.getElementById('rem').checked}));
 }});`);
 
+// Identical controls in the document and sibling/nested roots must not steal a recorded action.
+const nestedShadowPage = (frame = false) => page('Nested shadow fixture', `
+<input aria-label="Repeated field" data-testid="shared" name="second">
+<outer-box id="before"></outer-box><outer-box id="target"></outer-box><outer-box id="after"></outer-box>
+<closed-box id="closed"></closed-box>
+${frame ? '<iframe title="nested shadow frame" src="/shadow-nested" width="650" height="400"></iframe>' : ''}`, `
+customElements.define('inner-box', class extends HTMLElement {
+  connectedCallback() {
+    const root = this.attachShadow({mode:'open'});
+    root.innerHTML = '<style>form{display:block;padding:6px}input{display:block;width:180px}</style><form method="post" action="/shadow-submit"><input name="first" aria-label="Repeated field" data-testid="shared"><input name="second" aria-label="Repeated field" data-testid="shared"><button type="submit">Store value</button></form>';
+    const form = root.querySelector('form');
+    form.addEventListener('submit', () => {
+      const outer = this.getRootNode().host;
+      const fields = {outer:outer.id || outer.dataset.host, inner:[...this.getRootNode().querySelectorAll('inner-box')].indexOf(this)+1, page:location.pathname};
+      for (const [name,value] of Object.entries(fields)) {
+        const input = document.createElement('input'); input.type='hidden'; input.name=name; input.value=String(value); form.appendChild(input);
+      }
+    });
+  }
+});
+customElements.define('outer-box', class extends HTMLElement {
+  connectedCallback() {
+    const root = this.attachShadow({mode:'open'});
+    root.appendChild(document.createElement('inner-box'));
+    root.appendChild(document.createElement('inner-box'));
+  }
+});
+customElements.define('closed-box', class extends HTMLElement {
+  connectedCallback() { this.attachShadow({mode:'closed'}).innerHTML='<input name="second" aria-label="Repeated field">'; }
+});
+const unusual = document.createElement('outer-box');
+unusual.dataset.host = ${JSON.stringify('雪\'"\\ >> host')};
+document.body.appendChild(unusual);
+unusual.shadowRoot.querySelectorAll('inner-box')[1].shadowRoot.querySelector('[name="second"]').dataset.field = ${JSON.stringify('雪\'"\\ >> field')};
+`);
+
+const SHADOW_LIMITS = page('Shadow recording boundaries', '<div id="boundary"></div>', `
+window.__boundaryClicks = [];
+const button = (root, id, name) => {
+  const el = document.createElement('button'); el.id=id; el.type='button'; el.dataset.case=name; el.textContent=name;
+  el.addEventListener('click', () => window.__boundaryClicks.push(name)); root.appendChild(el);
+};
+let root = document.querySelector('#boundary');
+for (let depth=1; depth<=9; depth++) {
+  const host=document.createElement('level-box');host.id='level'+depth;root.appendChild(host);root=host.attachShadow({mode:'open'});
+  button(root,'go','depth-'+depth); // root8 is a real decoy for a clipped recording from root9
+}
+for (const length of [598,599,600]) {
+  const host=document.createElement('limit-box');host.id='h'.repeat(length);document.body.appendChild(host);
+  button(host.attachShadow({mode:'open'}),'go','host-'+(length+1));
+}
+const host=document.createElement('limit-box');host.id='css-boundary';document.body.appendChild(host);
+const cssRoot=host.attachShadow({mode:'open'});
+for (const length of [598,599,600]) button(cssRoot,'g'.repeat(length),'css-'+(length+1));
+`);
+
 const json = (res, status, body, headers = {}) => { res.writeHead(status, { 'content-type': 'application/json', ...headers }); res.end(JSON.stringify(body)); };
 const readBody = (req) => new Promise((r) => { const c = []; req.on('data', (d) => c.push(d)); req.on('end', () => r(Buffer.concat(c).toString('utf8'))); });
 const authed = (req) => req.headers.authorization === `Bearer ${DEMO_TOKEN}`;
@@ -159,6 +215,7 @@ export function startDemoSite({ port = 0 } = {}) {
   const applications = [];
   const signups = [];
   const hits = [];
+  const shadowResults = [];
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     const p = url.pathname;
@@ -174,6 +231,14 @@ export function startDemoSite({ port = 0 } = {}) {
     if (p === '/frame-form') return html(FRAME_FORM);
     if (p === '/frames') return html(framesPage(req.headers.host));
     if (p === '/shadow') return html(SHADOW);
+    if (p === '/shadow-nested') return html(nestedShadowPage());
+    if (p === '/shadow-frame') return html(nestedShadowPage(true));
+    if (p === '/shadow-limits') return html(SHADOW_LIMITS);
+    if (p === '/shadow-results') return json(res, 200, shadowResults);
+    if (p === '/shadow-submit' && req.method === 'POST') {
+      shadowResults.push(Object.fromEntries(new URLSearchParams(await readBody(req))));
+      return html(page('Shadow stored', '<p role="status">Stored the synthetic shadow form.</p><button id="shadow-confirmation" type="button">Continue after storing</button>'));
+    }
     if (p === '/signup') return html(SIGNUP);
     if (p === '/tables') return html(TABLES);
     if (p === '/table-frame') return html(TABLE_FRAME);
