@@ -1,0 +1,16 @@
+{
+  "name": "browserforge-plugin-github-stats",
+  "version": "0.1.0",
+  "description": "Read-only public GitHub repository statistics, without tokens.",
+  "type": "module",
+  "main": "index.js",
+  "keywords": ["browserforge-plugin"],
+  "license": "MIT",
+  "browserforge": {
+    "id": "github-stats",
+    "toolPrefix": "ghstats",
+    "description": "Public GitHub stars, forks, open issues and latest release; sends only the repository name to api.github.com.",
+    "permissions": { "network": ["https://api.github.com"] }
+  },
+  "dependencies": { "@browserforge/plugin-sdk": "*" }
+}

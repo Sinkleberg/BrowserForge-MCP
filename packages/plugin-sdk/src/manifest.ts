@@ -22,6 +22,13 @@ const permissionsSchema = z.object({
   files: z.object({ read: z.array(rootSpec).max(10).optional(), write: z.array(rootSpec).max(10).optional() }).optional(),
   /** Programs the plugin may run: a command name (e.g. "python3") or setting:<key> for a path the user sets. Never run through a shell. */
   exec: z.array(z.string().min(1).max(200)).max(10).optional(),
+  /** Exact HTTPS origins, never URL patterns or paths. Used only by the read-only fetch helper. */
+  network: z.array(z.string().max(200).refine((value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' && !url.username && !url.password && !url.hostname.includes('*') && url.origin === value;
+    } catch { return false; }
+  }, 'Use an exact HTTPS origin, e.g. https://api.github.com (no path, credentials or wildcard)')).max(10).optional(),
 });
 
 export const manifestSchema = z
@@ -45,6 +52,8 @@ export interface Permissions {
   browser: boolean;
   files: { read: string[]; write: string[] };
   exec: string[];
+  /** Absent in older stored grants; absence means no network access through the API. */
+  network?: string[];
 }
 
 export interface PluginManifest {
@@ -79,7 +88,8 @@ export function parseManifest(raw: unknown): PluginManifest {
 export function normalizePermissions(p: z.infer<typeof permissionsSchema> | Permissions | undefined): Permissions {
   const files = (p?.files ?? {}) as { read?: string[]; write?: string[] };
   const sort = (a: string[] | undefined) => [...new Set(a ?? [])].sort();
-  return { browser: p?.browser === true, files: { read: sort(files.read), write: sort(files.write) }, exec: sort(p?.exec) };
+  const network = sort(p?.network);
+  return { browser: p?.browser === true, files: { read: sort(files.read), write: sort(files.write) }, exec: sort(p?.exec), ...(network.length ? { network } : {}) };
 }
 
 export const samePermissions = (a: Permissions, b: Permissions): boolean => JSON.stringify(normalizePermissions(a)) === JSON.stringify(normalizePermissions(b));
@@ -92,6 +102,7 @@ export function describePermissions(m: PluginManifest): string[] {
   for (const r of p.files.read) out.push(`Read files in: ${describeRoot(r, m)}`);
   for (const r of p.files.write) out.push(`Create and change files in: ${describeRoot(r, m)}`);
   for (const e of p.exec) out.push(`Run the program: ${e.startsWith('setting:') ? `${e} (the path you configure)` : e}`);
+  for (const origin of p.network ?? []) out.push(`Read public data from: ${origin} (HTTPS GET/HEAD only; no credentials or redirects)`);
   if (!out.length) out.push('Nothing beyond adding tools that work on their own data');
   return out;
 }

@@ -148,13 +148,15 @@ Exported scripts stop before submits, sends and uploads unless you say `FLOW_CON
 Anyone can add to BrowserForge without touching the core:
 
 * **Skills**: a folder with a `SKILL.md` (and optional ready-made workflows). No code; agents read it. `browserforge skill new my-skill`. [docs/SKILLS.md](docs/SKILLS.md)
-* **Plugins**: a small ES module that adds tools, with a manifest of exactly which folders, programs and browser access it needs. You see that list in plain words and approve it before it is installed; a later version asking for more is switched off until you approve again. `browserforge plugin new my-tool`. [docs/PLUGINS.md](docs/PLUGINS.md)
+* **Plugins**: a small ES module that adds tools, with a manifest of exactly which folders, programs, browser access and public HTTPS origins it needs. You see that list in plain words and approve it before it is installed; a later version asking for more is switched off until you approve again. `browserforge plugin new my-tool`. [docs/PLUGINS.md](docs/PLUGINS.md)
 
 ```bash
 browserforge plugin search cv            # npm packages tagged "browserforge-plugin"
 browserforge plugin add ./plugins/rendercv
 browserforge plugin config rendercv cvDir=~/cv rendercv=~/venv/bin/rendercv
 ```
+
+For a read-only public API example without tokens, see [`examples/plugins/github-stats`](examples/plugins/github-stats).
 
 The first plugin is [`plugins/rendercv`](plugins/rendercv): tailor a RenderCV resume to each job (reorder and reword only; it rejects any number, link or tool name not already in your CV), render it, and keep an application log. Its companion skill [`skills/job-apply`](skills/job-apply) is a worked example of a skill. Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
 

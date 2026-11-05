@@ -14,6 +14,8 @@ Rule of thumb: if a few steps with the existing tools do the job, write a **skil
 
 The reference plugin is [`plugins/rendercv`](../plugins/rendercv) (tailor a CV, render it, log applications) with its companion skill [`skills/job-apply`](../skills/job-apply). The smallest plugin is [`examples/plugins/hello`](../examples/plugins/hello).
 
+[`examples/plugins/github-stats`](../examples/plugins/github-stats) shows a read-only public API tool with an explicit network permission, mocked tests and no token.
+
 ## Quick start
 
 ```bash
@@ -93,6 +95,7 @@ Unknown fields are rejected, so typos do not silently weaken a permission.
 * **`files`** are named folders, never raw paths: `uploads` (BrowserForge's upload folder, the only place `browser_fill_form` reads files from), `exports`, `data` (your plugin's own private folder), or `setting:<key>` (a folder the user configured). Each may be narrowed with a sub-folder (`setting:cvDir/tailored`). Read and write are separate: write does not imply read.
 * **`exec`** lists programs: a command name (`python3`) or `setting:<key>` (a program path the user configured). They are run without a shell, with a minimal environment (no inherited API keys), a time limit and an output cap.
 * **`browser`** lets the plugin call BrowserForge's browser actions. Consequential ones (submit, send, upload, password) still stop for the human in the extension.
+* **`network`** lists exact HTTPS origins, for example `["https://api.github.com"]`, for `api.fetch`. No wildcards, paths, query strings or user information. The helper allows public GET/HEAD only, never follows redirects or sends credentials, and reads at most 1 MB per response. Adding or changing origins requires fresh approval. Older grants have no network permission.
 
 At install the user is shown these in plain words and must approve them. If a later version asks for different permissions, the plugin is **switched off** until the user approves again (`browserforge plugin update <id>`).
 
@@ -112,7 +115,10 @@ await api.browser.call(action, args?, { browserId?, timeoutMs? })
 api.log.info/warn/error(message, meta?)
 api.untrusted(origin, data)          // mark outside content as data, not instructions
 api.signal                           // aborted when the agent cancels
+await api.fetch('https://api.github.com/repos/demo-org/example') // -> { status, headers, body: string }
 ```
+
+`api.fetch(url, { method?: 'GET' | 'HEAD', timeoutMs?: number })` uses a 10-second timeout by default (allowed range 100–30000 ms), including reading the response body. It supplies fixed JSON/User-Agent headers; custom headers, authentication and request bodies are not supported. Non-success HTTP statuses are returned for the plugin to handle. Wrap returned external data with `api.untrusted`. These checks apply to the API; they do not sandbox a plugin's direct Node imports or global `fetch`.
 
 `root` is exactly the string you declared (`"setting:cvDir"`, `"data"`). Paths are resolved and checked after following symlinks; `..` and links that escape the root are refused.
 

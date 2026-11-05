@@ -29,6 +29,22 @@ const copyHello = (changes: (pkg: any) => void) => {
 };
 
 describe('plugin add / update', () => {
+  it('requires fresh consent when a legacy plugin adds a public network origin', async () => {
+    const src = copyHello(() => undefined);
+    const store = new PluginStore(tmp());
+    await pluginAdd(store, src, io([true]));
+    const pkg = JSON.parse(fs.readFileSync(path.join(src, 'package.json'), 'utf8'));
+    pkg.version = '0.2.0';
+    pkg.browserforge.permissions.network = ['https://api.github.com'];
+    fs.writeFileSync(path.join(src, 'package.json'), JSON.stringify(pkg));
+    const decline = io([false]);
+    expect(await pluginUpdate(store, 'hello', decline)).toBe(false);
+    expect(decline.text()).toMatch(/PERMISSIONS CHANGED[\s\S]*Read public data from: https:\/\/api.github.com/);
+    expect(decline.questions[0]).toMatch(/Approve the new permissions/);
+    expect(store.get('hello')?.granted.network).toBeUndefined();
+    expect(await pluginUpdate(store, 'hello', io([true]))).toBe(true);
+    expect(store.get('hello')?.granted.network).toEqual(['https://api.github.com']);
+  });
   it('shows the permissions and a warning, installs only after a yes, and cleans up after a no', async () => {
     const store = new PluginStore(tmp());
     const no = io([false]);
