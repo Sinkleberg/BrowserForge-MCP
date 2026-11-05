@@ -17,6 +17,25 @@ function confidenceFor(samples: number, consistent = true): Confidence {
 }
 const claim = (basis: Basis, samples: number, evidence: string[], consistent = true): Claim => ({ basis, confidence: confidenceFor(samples, consistent), evidence: evidence.slice(0, 10) });
 
+/** Conservative categorical guesses: repeated labels, not identifiers, credentials or free-form inputs. */
+function queryEnum(name: string, values: string[], ids: string[]): Pick<ParamInfo, 'enum' | 'enumClaim'> {
+  const evidence = [...new Set(ids)];
+  const key = name.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[^a-z0-9]+/gi, '_').toLowerCase();
+  const freeOrId = /(^|_)(id|ids|uid|uuid|guid|key|code|nonce|challenge|verifier|hash|digest|user|username|account|customer|cursor|after|before|offset|page|name|email|phone|url|uri|path|slug|q|query|search|text|message|note|notes|description|comment|comments|title)(_|$)/;
+  if (evidence.length < 5 || isSensitiveKey(name) || freeOrId.test(key)) return {};
+  const support = new Map<string, Set<string>>();
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i]!;
+    // Lowercase categorical labels only. Numbers, UUIDs, opaque IDs and text with spaces/punctuation are deliberately excluded.
+    if (!/^[a-z][a-z-]{1,31}$/.test(value) || isIdSegment(value) || redactString(value) !== value) return {};
+    const requests = support.get(value) ?? support.set(value, new Set()).get(value)!;
+    if (support.size > 3) return {};
+    requests.add(ids[i]!);
+  }
+  if (support.size < 2 || support.size > 3 || [...support.values()].some((requests) => requests.size < 2)) return {};
+  return { enum: [...support.keys()], enumClaim: { ...claim('hypothesis', evidence.length, evidence), confidence: 'low' } };
+}
+
 function isIdSegment(seg: string): boolean {
   return /^\d+$/.test(seg) || RE_UUID.test(seg) || /^[a-z]{2,10}_[A-Za-z0-9]{1,}$/.test(seg) && /\d/.test(seg) || /^[0-9a-f]{12,}$/i.test(seg) || /^[A-Za-z0-9_-]{20,}$/.test(seg) && /\d/.test(seg);
 }
@@ -155,6 +174,7 @@ function analyzeGroup(key: { method: string; scheme: string; host: string; templ
       examples: [...distinct].slice(0, 4).map((v) => (isSensitiveKey(name) ? REDACTED : redactString(v))),
       // "required" is only a hypothesis: seen in every sample, which does not prove the server rejects its absence.
       ...claim(always && n >= 2 ? 'hypothesis' : 'observed', n, e.ids, true),
+      ...(type === 'string' ? queryEnum(name, e.values, e.ids) : {}),
     };
   });
 

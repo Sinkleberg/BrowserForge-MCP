@@ -30,7 +30,9 @@ export function generateOpenApi(report: AnalysisReport, opts: { host?: string; t
     const parameters = [
       ...e.pathParams.map((p) => ({ name: p.name, in: 'path', required: true, schema: { type: p.type === 'integer' ? 'integer' : 'string', ...(p.type === 'uuid' ? { format: 'uuid' } : {}) }, 'x-basis': p.basis })),
       ...e.query.map((q) => ({
-        name: q.name, in: 'query', required: false, schema: { type: q.type }, ...(q.examples.length ? { example: q.examples[0] } : {}),
+        name: q.name, in: 'query', required: false,
+        schema: { type: q.type, ...(q.enum?.length ? { enum: q.enum, 'x-basis': 'hypothesis', 'x-confidence': q.enumClaim?.confidence ?? 'low', 'x-evidence': q.enumClaim?.evidence ?? [] } : {}) },
+        ...(q.examples.length ? { example: q.examples[0] } : {}),
         'x-observed-in-all-samples': q.required, 'x-basis': q.basis, 'x-confidence': q.confidence,
       })),
     ];

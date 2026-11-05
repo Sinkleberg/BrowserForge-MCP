@@ -69,7 +69,7 @@ Binary bodies are never stored. Capture stops at 5 000 requests per capture (con
 
 ## API analysis and client generation
 
-- Everything is inferred from the samples you captured. Parameters never seen are unknown; a parameter seen in every sample is only a *hypothesis* of "required". Enum values, numeric ranges, rate limits and server-side validation are not inferred.
+- Everything is inferred from the samples you captured. Parameters never seen are unknown; a parameter seen in every sample is only a *hypothesis* of "required". A query enum is only a low-confidence *hypothesis*, with separate evidence in `enumClaim`: at least five distinct requests, two or three short lowercase labels (2–32 characters), each present in at least two requests. Known identifier/sensitive/free-text parameter names and non-label values are excluded; numeric and boolean enums are deliberately not inferred. This does not prove an exhaustive set or server validation. OpenAPI includes the possible values in `schema.enum` with `x-basis: hypothesis`, confidence and evidence, separate from the parameter's existing basis. Numeric ranges, rate limits and server-side validation are not inferred.
 - Path templating treats numeric / UUID / `prefix_123`-style / long-hex segments as identifiers; other variable segments (slugs, usernames) stay literal and produce one endpoint per value.
 - Response schemas need captured response bodies (enable body capture or import a HAR that has them).
 - GraphQL operations are documented and callable from the generated clients but cannot be represented as distinct OpenAPI operations (they share one path+method), so they are listed under `x-browserforge-skipped`.
